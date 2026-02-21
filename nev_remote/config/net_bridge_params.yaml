@@ -1,0 +1,9 @@
+net_bridge:
+  ros__parameters:
+    server_ip: "127.0.0.1"
+    server_port: 5000
+    local_port: 5001
+    heartbeat_timeout: 2.0
+    control_timeout: 1.0
+    vehicle_rate: 20.0
+    resource_rate: 1.0
