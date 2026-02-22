@@ -12,6 +12,7 @@ find_package(std_msgs REQUIRED)
 
 install(PROGRAMS
   scripts/net_bridge.py
+  scripts/webrtc_camera.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

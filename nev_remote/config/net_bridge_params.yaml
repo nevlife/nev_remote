@@ -1,9 +1,11 @@
 net_bridge:
   ros__parameters:
-    server_ip: "127.0.0.1"
-    server_port: 5000
-    local_port: 5001
-    heartbeat_timeout: 2.0
-    control_timeout: 1.0
-    vehicle_rate: 20.0
-    resource_rate: 1.0
+    # Zenoh router endpoint
+    # 로컬 테스트: tcp/127.0.0.1:7447  (rmw_zenohd 사용)
+    # 차량→GCS:   tcp/<GCS_IP>:7447
+    zenoh_locator: "tcp/127.0.0.1:7447"
+
+    heartbeat_timeout: 2.0   # sec — no HB → e-stop
+    control_timeout:   1.0   # sec — no teleop in REMOTE mode → e-stop
+    vehicle_rate:      20.0  # Hz — vehicle state publish rate
+    resource_rate:     1.0   # Hz — system resource publish rate
