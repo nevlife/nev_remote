@@ -249,11 +249,19 @@ class NetBridge(Node):
 
         connected   = self.bridge_flag == 0 and self.last_hb_time > 0
         status_code = {0: 0, 3: 1}.get(self.bridge_flag, 2)
+        bw_mbps = 0.0
+        if self.net_metrics:
+            total_bps = sum(
+                iface.input_bytes_per_sec + iface.output_bytes_per_sec
+                for iface in self.net_metrics.interfaces
+                if iface.is_up
+            )
+            bw_mbps = total_bps * 8 / 1_000_000
         self._zput('nev/vehicle/network', {
             'connected':      connected,
             'status_code':    status_code,
             'rtt_ms':         float(self.rtt_ms),
-            'bandwidth_mbps': 0.0,
+            'bandwidth_mbps': round(bw_mbps, 3),
         })
 
         if self.hunter_status:
