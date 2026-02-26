@@ -49,6 +49,7 @@ class NetBridge(Node):
                 'nev/vehicle/gpu',
                 'nev/vehicle/disk',
                 'nev/vehicle/net',
+                'nev/vehicle/hb_ack',
             ]
         }
 
@@ -64,7 +65,6 @@ class NetBridge(Node):
         self._lock         = threading.Lock()
         self.last_hb_time  = 0.0
         self.last_ctrl_time = 0.0
-        self.rtt_ms        = 0.0
         self.bridge_flag   = 0
         self.server_estop  = False
         self.current_mode  = -1
@@ -107,7 +107,7 @@ class NetBridge(Node):
         self.network_status_pub = self.create_publisher(NetworkStatus, '/remote/network_status', 10)
 
         # ── Timers ────────────────────────────────────────────────────────────
-        self.create_timer(0.02,          self._process_commands)   # 50 Hz
+        self.create_timer(0.05,          self._process_commands)   # 20 Hz
         self.create_timer(1.0 / v_rate,  self.send_vehicle)
         self.create_timer(1.0 / r_rate,  self.send_resources)
         self.create_timer(0.2,           self.check_heartbeat)
@@ -132,9 +132,10 @@ class NetBridge(Node):
 
     def _on_heartbeat(self, sample):
         data = json.loads(bytes(sample.payload))
-        ts = data.get('ts', time.time())
-        self.rtt_ms = max(0.0, (time.time() - ts) * 1000.0)
+        ts = data.get('ts', 0.0)
         self.last_hb_time = time.monotonic()
+        # ts를 그대로 반송 — 서버에서 왕복 시간 계산
+        self._zput('nev/vehicle/hb_ack', {'ts': ts})
 
     def _on_teleop(self, sample):
         data = json.loads(bytes(sample.payload))
@@ -202,11 +203,20 @@ class NetBridge(Node):
         connected   = self.bridge_flag == 0 and self.last_hb_time > 0
         status_code = {0: 0, 3: 1}.get(self.bridge_flag, 2)
 
+        bw_mbps = 0.0
+        if self.net_metrics:
+            total_bps = sum(
+                iface.input_bytes_per_sec + iface.output_bytes_per_sec
+                for iface in self.net_metrics.interfaces
+                if iface.is_up
+            )
+            bw_mbps = total_bps * 8 / 1_000_000
+
         net_msg = NetworkStatus(
             connected=connected,
             status_code=status_code,
-            rtt_ms=float(self.rtt_ms),
-            bandwidth_mbps=0.0,
+            rtt_ms=0.0,
+            bandwidth_mbps=round(bw_mbps, 3),
         )
         self.network_status_pub.publish(net_msg)
 
@@ -260,7 +270,6 @@ class NetBridge(Node):
         self._zput('nev/vehicle/network', {
             'connected':      connected,
             'status_code':    status_code,
-            'rtt_ms':         float(self.rtt_ms),
             'bandwidth_mbps': round(bw_mbps, 3),
         })
 
