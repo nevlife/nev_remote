@@ -25,9 +25,9 @@ class ZenohCamera(Node):
         self.declare_parameter('image_topic',   '/camera/camera/color/image_raw')
         self.declare_parameter('zenoh_locator', 'tcp/127.0.0.1:7447')
         self.declare_parameter('width',         640)
-        self.declare_parameter('height',        360)
+        self.declare_parameter('height',        480)
         self.declare_parameter('fps',           15)
-        self.declare_parameter('bitrate_kbps',  1000)
+        self.declare_parameter('bitrate_kbps',  500)
 
         topic   = self.get_parameter('image_topic').value
         locator = self.get_parameter('zenoh_locator').value

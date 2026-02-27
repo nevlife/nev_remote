@@ -3,4 +3,4 @@ zenoh_camera:
     image_topic:   /camera/camera/color/image_raw
     zenoh_locator: tcp/203.250.33.77:80  # 운용 시 GCS IP로 변경
     jpeg_quality:  80                  # 1~100 (낮을수록 대역폭 절약)
-    max_fps:       15.0
+    max_fps:       8.0
