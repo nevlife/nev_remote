@@ -87,9 +87,9 @@ class ZenohCamera(Node):
             f'caps="video/x-raw,format=BGR,width={w},height={h},framerate={fps}/1" ! '
             f'videoconvert ! '
             f'video/x-raw,format=NV12 ! '
-            f'nvh264enc bitrate={bitrate_kbps} zerolatency=true rc-mode=cbr-ld-hq gop-size={fps} ! '
-            f'h264parse config-interval=-1 ! '
-            f'video/x-h264,stream-format=byte-stream,alignment=au ! '
+            f'nvh265enc bitrate={bitrate_kbps} zerolatency=true rc-mode=cbr-ld-hq gop-size={fps} ! '
+            f'h265parse config-interval=-1 ! '
+            f'video/x-h265,stream-format=byte-stream,alignment=au ! '
             f'appsink name=appsink drop=true max-buffers=2 sync=false'
         )
         self.get_logger().info(f"GStreamer 파이프라인: {pipeline_str}")
