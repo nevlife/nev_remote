@@ -2,7 +2,7 @@
 import json
 import struct
 import time
-import collections  # 시간 측정을 위한 큐(Queue) 라이브러리 추가
+import collections  # queue for measuring encode latency per frame
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
@@ -49,7 +49,7 @@ class ZenohVideoEncoder(Node):
         self._frame_interval = 1.0 / self._fps
         self._last_push_time = 0.0
 
-        # start time frame
+        # Start time frame
         self._timestamp_queue = collections.deque(maxlen=30)
 
         conf = zenoh.Config()
@@ -150,7 +150,7 @@ class ZenohVideoEncoder(Node):
         try:
             buf = Gst.Buffer.new_wrapped(frame.tobytes())
 
-            # before pushing the buffer, store the current time in the queue
+            # Before pushing the buffer, store the current time in the queue
             self._timestamp_queue.append(time.perf_counter())
             
             retval = self.appsrc.emit('push-buffer', buf)
@@ -164,7 +164,7 @@ class ZenohVideoEncoder(Node):
         sample = sink.emit('pull-sample')
         if isinstance(sample, Gst.Sample):
 
-            # when the encoded frame comes out of the pipeline
+            # When the encoded frame comes out of the pipeline
             latency_ms = 0.0
             if self._timestamp_queue:
                 start_time = self._timestamp_queue.popleft()
@@ -178,7 +178,7 @@ class ZenohVideoEncoder(Node):
                     # 10-byte header: [ts: double 8B][encode_ms: uint16 2B]
                     header = struct.pack('dH', time.time(), int(latency_ms))
                     self._zpub.put(header + nal_bytes)
-                    # accumulate stats
+                    # Accumulate stats
                     self._tx_bytes        += len(nal_bytes)
                     self._encode_ms_sum   += latency_ms
                     self._encode_ms_count += 1
@@ -187,7 +187,7 @@ class ZenohVideoEncoder(Node):
                 finally:
                     buf.unmap(map_info)
 
-            # publish video_stats every ~1 second
+            # Publish video_stats every ~1 second
             now = time.time()
             dt  = now - self._stats_ts
             if dt >= 1.0:
