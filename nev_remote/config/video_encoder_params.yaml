@@ -1,0 +1,63 @@
+zenoh_camera:
+  ros__parameters:
+    image_topic: "/camera/camera/color/image_raw"
+    zenoh_locator: "tcp/203.250.33.77:80"
+
+    width: 640
+    height: 480
+    max_fps: 15.0
+
+    config_interval: -1
+    n-threads: 4
+    vc-qos: true #cpu 레벨 드롭
+
+    # Enum "GstNvPreset" Default: 0, "default"
+    # (0): default (1): hp (2): hq (3): low-latency (4): low-latency-hq (5): low-latency-hp (6): lossless (7): lossless-hp
+    preset: "low-latency-hq"
+
+    # Enum "GstNvRCMode" Default: 0, "default"
+    # (0): default (1): constqp (2): cbr (3): vbr (4): vbr-minqp(DEPRECATED) (5): cbr-ld-hq (6): cbr-hq (7): vbr-hq
+    rc-mode: "cbr-ld-hq"
+
+    # Unsigned Integer. Range: 0 - 2048000 Default: 0 
+    bitrate: 500
+
+    # Maximum Bitrate in kbit/sec (ignored for CBR mode)
+    # Unsigned Integer. Range: 0 - 2048000 Default: 0 
+    max-bitrate: 0
+
+    # Target Constant Quality level for VBR mode (0 = automatic)
+    # Double. Range: 0 - 51 Default: 0 
+    const-quality: 0.0
+
+    # Number of frames between intra frames (-1 = infinite)
+    # Integer. Range: -1 - 2147483647 Default: 75 
+    gop-size: 15
+
+    # Use AU (Access Unit) delimiter
+    # Boolean. Default: true
+    aud: true
+
+    # Handle Quality-of-Service events from downstream
+    # Boolean. Default: false
+    qos: false
+
+    # Zero latency operation (no reordering delay)
+    # Boolean. Default: false
+    zerolatency: true
+
+    # Number of frames for frame type lookahead
+    # Unsigned Integer. Range: 0 - 32 Default: 0 (NULL 또는 READY 상태에서만 변경 가능)
+    rc-lookahead: 0
+
+    # Number of B-frames between I and P
+    # Unsigned Integer. Range: 0 - 5 Default: 0 (NULL 또는 READY 상태에서만 변경 가능)
+    bframes: 0
+
+    # Enable adaptive I-frame insert when lookahead is enabled
+    # Boolean. Default: false (NULL 또는 READY 상태에서만 변경 가능)
+    i-adapt: false
+
+    # Enable adaptive B-frame insert when lookahead is enabled
+    # Boolean. Default: false (NULL 또는 READY 상태에서만 변경 가능)
+    b-adapt: false

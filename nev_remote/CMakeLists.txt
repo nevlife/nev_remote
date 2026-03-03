@@ -12,13 +12,11 @@ find_package(std_msgs REQUIRED)
 
 install(PROGRAMS
   scripts/net_bridge.py
-  scripts/zenoh_camera.py
-  scripts/webrtc_camera.py
+  scripts/zenoh_video_encoder.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(PROGRAMS
-  test/test_server.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

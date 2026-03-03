@@ -6,14 +6,14 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     params = PathJoinSubstitution([
-        FindPackageShare('nev_remote'), 'config', 'zenoh_camera_params.yaml'
+        FindPackageShare('nev_remote'), 'config', 'video_encoder_params.yaml'
     ])
 
     return LaunchDescription([
         Node(
             package='nev_remote',
-            executable='zenoh_camera.py',
-            name='zenoh_camera',
+            executable='zenoh_video_encoder.py',
+            name='zenoh_video_encoder',
             output='screen',
             parameters=[params],
         ),
