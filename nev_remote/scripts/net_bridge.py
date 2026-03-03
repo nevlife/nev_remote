@@ -240,6 +240,7 @@ class NetBridge(Node):
     def send_vehicle(self):
         ms = self.mux_status
         self._zput('nev/vehicle/mux', {
+            'ts':             time.time(),
             'requested_mode': int(ms.mode),
             'active_source':  int(ms.cmd_source),
             'remote_enabled': bool(ms.remote_status),
@@ -249,6 +250,7 @@ class NetBridge(Node):
         })
 
         self._zput('nev/vehicle/twist', {
+            'ts':        time.time(),
             'nav_lx':    float(self.last_nav.linear.x),
             'nav_az':    float(self.last_nav.angular.z),
             'teleop_lx': float(self.last_teleop.linear.x),
@@ -276,6 +278,7 @@ class NetBridge(Node):
         if self.hunter_status:
             hs = self.hunter_status
             self._zput('nev/vehicle/hunter', {
+                'ts':             time.time(),
                 'linear_vel':     float(hs.linear_velocity),
                 'steering_angle': float(hs.steering_angle),
                 'vehicle_state':  int(hs.vehicle_state),
@@ -286,6 +289,7 @@ class NetBridge(Node):
 
         es = self.estop_status
         self._zput('nev/vehicle/estop', {
+            'ts':         time.time(),
             'is_estop':   bool(es.is_estop),
             'bridge_flag':int(es.bridge_flag),
             'mux_flag':   int(es.mux_flag),
