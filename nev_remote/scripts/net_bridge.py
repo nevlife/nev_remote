@@ -30,7 +30,6 @@ class NetBridge(Node):
         v_rate        = self.get_parameter('vehicle_rate').value
         r_rate        = self.get_parameter('resource_rate').value
 
-        # ── Zenoh session ─────────────────────────────────────────────────────
         conf = zenoh.Config()
         if locator:
             conf.insert_json5('connect/endpoints', json.dumps([locator]))
@@ -61,7 +60,6 @@ class NetBridge(Node):
             self._zsession.declare_subscriber('nev/gcs/cmd_mode',  self._on_cmd_mode),
         ]
 
-        # ── State ─────────────────────────────────────────────────────────────
         self._lock         = threading.Lock()
         self.last_hb_time  = 0.0
         self.last_ctrl_time = 0.0
@@ -71,10 +69,9 @@ class NetBridge(Node):
 
         # Pending commands (written by zenoh thread, read by rclpy timer)
         self._pending_teleop: tuple | None = None   # (lx, az)
-        self._pending_estop:  bool | None  = None
-        self._pending_mode:   int  | None  = None
+        self._pending_estop:  bool  | None  = None
+        self._pending_mode:   int   | None  = None
 
-        # ── Cached ROS messages ───────────────────────────────────────────────
         self.mux_status    = MuxStatus()
         self.estop_status  = EStopStatus()
         self.last_nav      = Twist()
@@ -87,7 +84,6 @@ class NetBridge(Node):
         self.net_metrics:   NetworkMetrics | None = None
         self.gpu_metrics:   GpuMetrics   | None = None
 
-        # ── ROS subscriptions ─────────────────────────────────────────────────
         self.create_subscription(MuxStatus,    '/vehicle/mux_status',   self.mux_status_callback, 10)
         self.create_subscription(EStopStatus,  '/vehicle/estop_status', self.estop_status_callback, 10)
         self.create_subscription(Twist,        '/cmd_vel',              self.cmd_vel_callback, 10)
@@ -100,21 +96,17 @@ class NetBridge(Node):
         self.create_subscription(NetworkMetrics,'/system_monitor/network',self.net_callback, 10)
         self.create_subscription(GpuMetrics,   '/system_monitor/gpu',   self.gpu_callback, 10)
 
-        # ── ROS publishers ────────────────────────────────────────────────────
         self.teleop_cmd_pub    = self.create_publisher(Twist,         '/remote/teleop_cmd', 10)
         self.estop_status_pub  = self.create_publisher(EStopStatus,   '/remote/estop_status', 10)
         self.cmd_mode_pub      = self.create_publisher(CmdMode,       '/remote/cmd_mode', 10)
         self.network_status_pub = self.create_publisher(NetworkStatus, '/remote/network_status', 10)
 
-        # ── Timers ────────────────────────────────────────────────────────────
         self.create_timer(0.05,          self._process_commands)   # 20 Hz
         self.create_timer(1.0 / v_rate,  self.send_vehicle)
         self.create_timer(1.0 / r_rate,  self.send_resources)
         self.create_timer(0.2,           self.check_heartbeat)
 
         self.get_logger().info(f'net_bridge (zenoh) started → {locator or "auto-discovery"}')
-
-    # ── ROS callbacks ─────────────────────────────────────────────────────────
 
     def mux_status_callback(self, msg):    self.mux_status = msg
     def estop_status_callback(self, msg):  self.estop_status = msg
@@ -128,13 +120,10 @@ class NetBridge(Node):
     def net_callback(self, msg):           self.net_metrics = msg
     def gpu_callback(self, msg):           self.gpu_metrics = msg
 
-    # ── Zenoh receive callbacks (zenoh background thread) ──────────────────────
-
     def _on_heartbeat(self, sample):
         data = json.loads(bytes(sample.payload))
         ts = data.get('ts', 0.0)
         self.last_hb_time = time.monotonic()
-        # ts를 그대로 반송 — 서버에서 왕복 시간 계산
         self._zput('nev/vehicle/hb_ack', {'ts': ts})
 
     def _on_teleop(self, sample):
@@ -154,8 +143,6 @@ class NetBridge(Node):
         data = json.loads(bytes(sample.payload))
         with self._lock:
             self._pending_mode = int(data.get('mode', -1))
-
-    # ── Command processing (rclpy timer, main thread) ─────────────────────────
 
     def _process_commands(self):
         with self._lock:
@@ -180,7 +167,6 @@ class NetBridge(Node):
             self.current_mode = mode
             self.cmd_mode_pub.publish(CmdMode(mode=mode))
 
-    # ── Safety watchdog ───────────────────────────────────────────────────────
 
     def check_heartbeat(self):
         now      = time.monotonic()
@@ -216,15 +202,11 @@ class NetBridge(Node):
             mux_flag=0,
         ))
 
-    # ── Zenoh publish helpers ─────────────────────────────────────────────────
-
     def _zput(self, topic: str, data):
         try:
             self._zpubs[topic].put(json.dumps(data))
         except Exception as e:
             self.get_logger().warning(f'zenoh put [{topic}]: {e}')
-
-    # ── Vehicle state → GCS ───────────────────────────────────────────────────
 
     def send_vehicle(self):
         ms = self.mux_status
@@ -274,8 +256,6 @@ class NetBridge(Node):
             'bridge_flag':int(es.bridge_flag),
             'mux_flag':   int(es.mux_flag),
         })
-
-    # ── System resources → GCS ────────────────────────────────────────────────
 
     def send_resources(self):
         if self.cpu_metrics:
@@ -340,8 +320,6 @@ class NetBridge(Node):
                     for i, iface in enumerate(n.interfaces)
                 ]
             })
-
-    # ── Cleanup ───────────────────────────────────────────────────────────────
 
     def destroy_node(self):
         for sub in self._zsubs:
