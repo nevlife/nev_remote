@@ -1,8 +1,6 @@
 net_bridge:
   ros__parameters:
     # Zenoh router endpoint
-    # 로컬 테스트: tcp/127.0.0.1:7447  (rmw_zenohd 사용)
-    # 차량→GCS:   tcp/<GCS_IP>:7447
     zenoh_locator: "tcp/203.250.33.77:80"
 
     heartbeat_timeout: 2.0   # sec — no HB → e-stop
