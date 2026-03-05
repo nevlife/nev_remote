@@ -13,6 +13,8 @@ find_package(std_msgs REQUIRED)
 install(PROGRAMS
   scripts/net_bridge.py
   scripts/zenoh_video_encoder.py
+  scripts/dual_camera_encoder.py
+  scripts/quad_camera_encoder.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

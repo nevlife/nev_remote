@@ -1,0 +1,39 @@
+quad_camera_encoder:
+  ros__parameters:
+    realsense_topic: "/camera/camera/color/image_raw"
+    c922_device:     "/dev/video8"
+    left_device:     "/dev/video6"
+    right_device:    "/dev/video11"
+
+    capture_fps: 10   # USB 카메라 캡처 fps (640x480 @ 15fps)
+    target_fps:  10
+
+    zenoh_locator:   "tcp/203.250.33.77:80"
+    zenoh_key:       "nev/vehicle/camera"
+    video_stats_key: "nev/vehicle/video_stats"
+
+    # 대역폭 (kbps)
+    bitrate:     300
+    max-bitrate: 0
+
+    n-threads: 4
+    vc-qos: true
+
+    # Enum "GstNvPreset"
+    # (0): default (1): hp (2): hq (3): low-latency (4): low-latency-hq (5): low-latency-hp
+    preset: "low-latency-hq"
+
+    # Enum "GstNvRCMode"
+    # (2): cbr (3): vbr (5): cbr-ld-hq (6): cbr-hq (7): vbr-hq
+    rc-mode: "cbr-ld-hq"
+
+    const-quality: 0.0
+
+    gop-size: 30
+    aud: true
+    qos: false
+    zerolatency: true
+    rc-lookahead: 0
+    bframes: 0
+    i-adapt: false
+    b-adapt: false

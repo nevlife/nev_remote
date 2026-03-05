@@ -1,10 +1,10 @@
-zenoh_camera:
+zenoh_video_encoder:
   ros__parameters:
     image_topic: "/camera/camera/color/image_raw"
     zenoh_locator: "tcp/203.250.33.77:80"
 
-    width: 640
-    height: 480
+    width: 1280
+    height: 720
     max_fps: 15.0
 
     config_interval: -1
@@ -20,7 +20,7 @@ zenoh_camera:
     rc-mode: "cbr-ld-hq"
 
     # Unsigned Integer. Range: 0 - 2048000 Default: 0 
-    bitrate: 500
+    bitrate: 200
 
     # Maximum Bitrate in kbit/sec (ignored for CBR mode)
     # Unsigned Integer. Range: 0 - 2048000 Default: 0 
