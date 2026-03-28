@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(nev_remote)
+project(nev_teleop_bot)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -7,18 +7,12 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(std_msgs REQUIRED)
 
 install(PROGRAMS
   scripts/net_bridge.py
   scripts/zenoh_video_encoder.py
   scripts/dual_camera_encoder.py
   scripts/quad_camera_encoder.py
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 

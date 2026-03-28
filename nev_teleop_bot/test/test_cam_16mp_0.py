@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test: C922 Pro Stream Webcam (/dev/video6)
+Test: 16MP USB Camera 0 (/dev/video8, usb-0000:00:14.0-6.1.1)
 zenoh_video_encoder.py 와 동일한 파이프라인/Zenoh 포맷 사용
 v4l2src 로 직접 캡처 (ROS2 불필요)
 """
@@ -16,16 +16,16 @@ from gi.repository import Gst
 import zenoh
 
 # ── 설정 ─────────────────────────────────────────────────────────────────────
-DEVICE         = '/dev/video6'
-WIDTH          = 640
-HEIGHT         = 480
+DEVICE         = '/dev/video8'
+WIDTH          = 1280
+HEIGHT         = 720
 FPS            = 15
 BITRATE        = 500
 CONFIG_INT     = -1
 
-ZENOH_KEY      = 'nev/vehicle/camera'
-STATS_KEY      = 'nev/vehicle/video_stats'
-ZENOH_LOCATOR  = 'tcp/203.250.33.77:80'
+ZENOH_KEY      = 'nev/robot/camera'
+STATS_KEY      = 'nev/robot/video_stats'
+ZENOH_LOCATOR  = 'tcp/127.0.0.1:7447'
 TEST_DURATION  = 10
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -33,7 +33,7 @@ class CameraTest:
     def __init__(self):
         Gst.init(None)
 
-        print(f'\n[webcam] C922 테스트 시작  device={DEVICE}  {WIDTH}x{HEIGHT}@{FPS}fps')
+        print(f'\n[16mp_0] 16MP Camera 0 테스트  device={DEVICE}  {WIDTH}x{HEIGHT}@{FPS}fps')
 
         # ── Zenoh ──
         conf = zenoh.Config()
@@ -77,7 +77,7 @@ class CameraTest:
         self.appsink.connect('new-sample', self._on_new_sample, None)
 
         self._tx_bytes    = 0
-        self._pub_ms_sum  = 0.0   # Zenoh put() 소요시간 (실제 측정 가능한 값)
+        self._pub_ms_sum  = 0.0
         self._pub_count   = 0
         self._stats_ts    = time.time()
         self._frame_count = 0
@@ -93,7 +93,6 @@ class CameraTest:
         if result:
             try:
                 nal_bytes = bytes(map_info.data)
-                # Zenoh put 소요시간 측정 (v4l2src 는 appsrc 타임스탬프 없어서 encode latency 측정 불가)
                 t0 = time.perf_counter()
                 if self._zpub:
                     header = struct.pack('dH', time.time(), 0)

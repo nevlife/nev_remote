@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test: 16MP USB Camera 0 (/dev/video8, usb-0000:00:14.0-6.1.1)
+Test: 16MP USB Camera 1 (/dev/video10, usb-0000:00:14.0-6.3)
 zenoh_video_encoder.py 와 동일한 파이프라인/Zenoh 포맷 사용
 v4l2src 로 직접 캡처 (ROS2 불필요)
 """
@@ -16,16 +16,16 @@ from gi.repository import Gst
 import zenoh
 
 # ── 설정 ─────────────────────────────────────────────────────────────────────
-DEVICE         = '/dev/video8'
+DEVICE         = '/dev/video10'
 WIDTH          = 1280
 HEIGHT         = 720
 FPS            = 15
 BITRATE        = 500
 CONFIG_INT     = -1
 
-ZENOH_KEY      = 'nev/vehicle/camera'
-STATS_KEY      = 'nev/vehicle/video_stats'
-ZENOH_LOCATOR  = 'tcp/203.250.33.77:80'
+ZENOH_KEY      = 'nev/robot/camera'
+STATS_KEY      = 'nev/robot/video_stats'
+ZENOH_LOCATOR  = 'tcp/127.0.0.1:7447'
 TEST_DURATION  = 10
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -33,7 +33,7 @@ class CameraTest:
     def __init__(self):
         Gst.init(None)
 
-        print(f'\n[16mp_0] 16MP Camera 0 테스트  device={DEVICE}  {WIDTH}x{HEIGHT}@{FPS}fps')
+        print(f'\n[16mp_1] 16MP Camera 1 테스트  device={DEVICE}  {WIDTH}x{HEIGHT}@{FPS}fps')
 
         # ── Zenoh ──
         conf = zenoh.Config()
@@ -60,7 +60,7 @@ class CameraTest:
             f'bitrate={BITRATE} max-bitrate=0 const-quality=0 '
             f'gop-size=15 aud=true qos=false zerolatency=true '
             f'rc-lookahead=0 bframes=0 i-adapt=false b-adapt=false ! '
-            f'h265parse config-interval={CONFIG_INT} ! '
+            f'h265parse config-interval=-1 ! '
             f'video/x-h265,stream-format=byte-stream,alignment=au ! '
             f'appsink name=appsink drop=true max-buffers=2 sync=false'
         )

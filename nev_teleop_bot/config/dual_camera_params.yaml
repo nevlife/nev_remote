@@ -4,9 +4,9 @@ dual_camera_encoder:
     c922_device:     "/dev/video6"
     c922_fps:        15
     target_fps:      15
-    zenoh_locator:   "tcp/203.250.33.77:80"
-    zenoh_key:       "nev/vehicle/camera"
-    video_stats_key: "nev/vehicle/video_stats"
+    zenoh_locator:   "tcp/127.0.0.1:7447"
+    zenoh_key:       "nev/robot/camera"
+    video_stats_key: "nev/robot/video_stats"
 
     # nvh265enc bitrate (kbps) — 1280x480 이므로 단일 카메라보다 약간 높게
     bitrate: 800

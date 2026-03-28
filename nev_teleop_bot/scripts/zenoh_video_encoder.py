@@ -2,7 +2,8 @@
 import json
 import struct
 import time
-import collections  # queue for measuring encode latency per frame
+import threading
+import collections
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
@@ -18,7 +19,7 @@ class ZenohVideoEncoder(Node):
     def __init__(self):
         super().__init__('zenoh_camera')
         self.declare_parameter('image_topic',     '/camera/camera/color/image_raw')
-        self.declare_parameter('zenoh_locator',   'tcp/203.250.33.77:80')
+        self.declare_parameter('zenoh_locator',   'tcp/127.0.0.1:7447')
         self.declare_parameter('width',           640)
         self.declare_parameter('height',          480)
         self.declare_parameter('max_fps',         15.0)
@@ -32,7 +33,7 @@ class ZenohVideoEncoder(Node):
         self.declare_parameter('const-quality',   0.0)
         self.declare_parameter('gop-size',        15)
         self.declare_parameter('aud',             True)
-        self.declare_parameter('qos',             False)
+        self.declare_parameter('gst_qos',          False)
         self.declare_parameter('zerolatency',     True)
         self.declare_parameter('rc-lookahead',    0)
         self.declare_parameter('bframes',         0)
@@ -55,11 +56,15 @@ class ZenohVideoEncoder(Node):
         conf = zenoh.Config()
         if self._locator:
             conf.insert_json5('connect/endpoints', json.dumps([self._locator]))
-        self._zsession = zenoh.open(conf)
-        self._zpub       = self._zsession.declare_publisher('nev/vehicle/camera', congestion_control=zenoh.CongestionControl.DROP)
-        self._vstats_pub = self._zsession.declare_publisher('nev/vehicle/video_stats')
+        try:
+            self._zsession = zenoh.open(conf)
+        except Exception as e:
+            self.get_logger().fatal(f'Zenoh connect failed: {e}')
+            raise SystemExit(1)
+        self._zpub       = self._zsession.declare_publisher('nev/robot/camera', congestion_control=zenoh.CongestionControl.DROP)
+        self._vstats_pub = self._zsession.declare_publisher('nev/robot/video_stats')
 
-        # stats accumulators
+        self._stats_lock     = threading.Lock()
         self._tx_bytes       = 0
         self._encode_ms_sum  = 0.0
         self._encode_ms_count = 0
@@ -89,7 +94,7 @@ class ZenohVideoEncoder(Node):
             f'const-quality={self.get_parameter("const-quality").value} '
             f'gop-size={self.get_parameter("gop-size").value} '
             f'aud={self._get_str_bool("aud")} '
-            f'qos={self._get_str_bool("qos")} '
+            f'qos={self._get_str_bool("gst_qos")} '
             f'zerolatency={self._get_str_bool("zerolatency")} '
             f'rc-lookahead={self.get_parameter("rc-lookahead").value} '
             f'bframes={self.get_parameter("bframes").value} '
@@ -166,42 +171,46 @@ class ZenohVideoEncoder(Node):
 
             # When the encoded frame comes out of the pipeline
             latency_ms = 0.0
-            if self._timestamp_queue:
+            try:
                 start_time = self._timestamp_queue.popleft()
-                latency_ms = (time.perf_counter() - start_time) * 1000.0 # convert to ms
+                latency_ms = (time.perf_counter() - start_time) * 1000.0
+            except IndexError:
+                pass
 
             buf = sample.get_buffer()
             result, map_info = buf.map(Gst.MapFlags.READ)
             if result:
                 try:
                     nal_bytes = bytes(map_info.data)
-                    # 10-byte header: [ts: double 8B][encode_ms: uint16 2B]
-                    header = struct.pack('dH', time.time(), int(latency_ms))
+                    header = struct.pack('dH', time.time(), min(int(latency_ms), 65535))
                     self._zpub.put(header + nal_bytes)
-                    # Accumulate stats
-                    self._tx_bytes        += len(nal_bytes)
-                    self._encode_ms_sum   += latency_ms
-                    self._encode_ms_count += 1
+                    with self._stats_lock:
+                        self._tx_bytes        += len(nal_bytes)
+                        self._encode_ms_sum   += latency_ms
+                        self._encode_ms_count += 1
                 except Exception as e:
                     self.get_logger().warning(f'Zenoh publication failed: {e}', throttle_duration_sec=3)
                 finally:
                     buf.unmap(map_info)
 
-            # Publish video_stats every ~1 second
             now = time.time()
-            dt  = now - self._stats_ts
-            if dt >= 1.0:
-                bw_mbps   = round(self._tx_bytes * 8 / (dt * 1e6), 3)
-                encode_ms = round(self._encode_ms_sum / self._encode_ms_count, 2) \
-                            if self._encode_ms_count > 0 else 0.0
+            with self._stats_lock:
+                dt  = now - self._stats_ts
+                if dt >= 1.0:
+                    bw_mbps   = round(self._tx_bytes * 8 / (dt * 1e6), 3)
+                    encode_ms = round(self._encode_ms_sum / self._encode_ms_count, 2) \
+                                if self._encode_ms_count > 0 else 0.0
+                    self._tx_bytes        = 0
+                    self._encode_ms_sum   = 0.0
+                    self._encode_ms_count = 0
+                    self._stats_ts        = now
+                else:
+                    bw_mbps = None
+            if bw_mbps is not None:
                 try:
                     self._vstats_pub.put(json.dumps({'bw_mbps': bw_mbps, 'encode_ms': encode_ms}))
                 except Exception as e:
                     self.get_logger().warning(f'video_stats publish failed: {e}', throttle_duration_sec=3)
-                self._tx_bytes        = 0
-                self._encode_ms_sum   = 0.0
-                self._encode_ms_count = 0
-                self._stats_ts        = now
 
         return Gst.FlowReturn.OK
 

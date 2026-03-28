@@ -17,6 +17,7 @@ import struct
 import time
 import threading
 
+import cv2
 import numpy as np
 import gi
 gi.require_version('Gst', '1.0')
@@ -39,9 +40,7 @@ def _resize_nn(frame: np.ndarray, h: int, w: int) -> np.ndarray:
     fh, fw = frame.shape[:2]
     if fh == h and fw == w:
         return frame
-    row = (np.arange(h) * fh / h).astype(np.int32)
-    col = (np.arange(w) * fw / w).astype(np.int32)
-    return frame[row][:, col]
+    return cv2.resize(frame, (w, h), interpolation=cv2.INTER_NEAREST)
 
 
 def _letterbox(frame: np.ndarray, h: int, w: int) -> np.ndarray:
@@ -68,9 +67,9 @@ class QuadCameraEncoder(Node):
         self.declare_parameter('right_device',    '/dev/video11')
         self.declare_parameter('capture_fps',     15)
         self.declare_parameter('target_fps',      15)
-        self.declare_parameter('zenoh_locator',   'tcp/203.250.33.77:80')
-        self.declare_parameter('zenoh_key',       'nev/vehicle/camera')
-        self.declare_parameter('video_stats_key', 'nev/vehicle/video_stats')
+        self.declare_parameter('zenoh_locator',   'tcp/127.0.0.1:7447')
+        self.declare_parameter('zenoh_key',       'nev/robot/camera')
+        self.declare_parameter('video_stats_key', 'nev/robot/video_stats')
         self.declare_parameter('bitrate',         500)
         self.declare_parameter('max-bitrate',     0)
         self.declare_parameter('preset',          'low-latency-hq')
@@ -101,7 +100,11 @@ class QuadCameraEncoder(Node):
         # ── Zenoh ──────────────────────────────────────────────────────────
         conf = zenoh.Config()
         conf.insert_json5('connect/endpoints', json.dumps([locator]))
-        self._zsession  = zenoh.open(conf)
+        try:
+            self._zsession  = zenoh.open(conf)
+        except Exception as e:
+            self.get_logger().fatal(f'Zenoh connect failed: {e}')
+            raise SystemExit(1)
         self._zpub      = self._zsession.declare_publisher(
             zkey, congestion_control=zenoh.CongestionControl.DROP)
         self._stats_pub = self._zsession.declare_publisher(stats_key)
@@ -177,6 +180,7 @@ class QuadCameraEncoder(Node):
 
         # ── 통계 ─────────────────────────────────────────────────────────────
         self._ts_queue     = collections.deque(maxlen=30)
+        self._stats_lock   = threading.Lock()
         self._tx_bytes     = 0
         self._enc_ms_sum   = 0.0
         self._enc_ms_count = 0
@@ -274,12 +278,11 @@ class QuadCameraEncoder(Node):
         q3 = left  if left  is not None else blk                            # bot-left
         q4 = right if right is not None else blk                            # bot-right
 
-        combined = np.ascontiguousarray(
-            np.vstack([
-                np.hstack([q2, q1]),
-                np.hstack([q3, q4]),
-            ])
-        )
+        combined = np.empty((OUT_H, OUT_W, 3), np.uint8)
+        combined[:TILE_H, :TILE_W] = q2
+        combined[:TILE_H, TILE_W:] = q1
+        combined[TILE_H:, :TILE_W] = q3
+        combined[TILE_H:, TILE_W:] = q4
 
         try:
             buf    = Gst.Buffer.new_wrapped(combined.tobytes())
@@ -300,18 +303,21 @@ class QuadCameraEncoder(Node):
         buf = sample.get_buffer()
 
         encode_latency_ms = 0.0
-        if self._ts_queue:
+        try:
             encode_latency_ms = (time.perf_counter() - self._ts_queue.popleft()) * 1000.0
+        except IndexError:
+            pass
 
         ok, mi = buf.map(Gst.MapFlags.READ)
         if ok:
             try:
                 nal_bytes = bytes(mi.data)
-                header    = struct.pack('dH', time.time(), int(encode_latency_ms))
+                header    = struct.pack('dH', time.time(), min(int(encode_latency_ms), 65535))
                 self._zpub.put(header + nal_bytes)
-                self._tx_bytes     += len(nal_bytes)
-                self._enc_ms_sum   += encode_latency_ms
-                self._enc_ms_count += 1
+                with self._stats_lock:
+                    self._tx_bytes     += len(nal_bytes)
+                    self._enc_ms_sum   += encode_latency_ms
+                    self._enc_ms_count += 1
             except Exception as e:
                 self.get_logger().warn(
                     f'Zenoh put failed: {e}', throttle_duration_sec=3)
@@ -319,19 +325,23 @@ class QuadCameraEncoder(Node):
                 buf.unmap(mi)
 
         now = time.time()
-        dt  = now - self._stats_ts
-        if dt >= 1.0:
-            bw_mbps   = round(self._tx_bytes * 8 / (dt * 1e6), 3)
-            encode_ms = round(self._enc_ms_sum / self._enc_ms_count, 2) \
-                        if self._enc_ms_count > 0 else 0.0
+        with self._stats_lock:
+            dt  = now - self._stats_ts
+            if dt >= 1.0:
+                bw_mbps   = round(self._tx_bytes * 8 / (dt * 1e6), 3)
+                encode_ms = round(self._enc_ms_sum / self._enc_ms_count, 2) \
+                            if self._enc_ms_count > 0 else 0.0
+                self._tx_bytes = self._enc_ms_sum = self._enc_ms_count = 0
+                self._stats_ts = now
+            else:
+                bw_mbps = None
+        if bw_mbps is not None:
             try:
                 self._stats_pub.put(
                     json.dumps({'bw_mbps': bw_mbps, 'encode_ms': encode_ms}))
             except Exception:
                 pass
             self.get_logger().info(f'BW={bw_mbps:.3f}Mbps  encode={encode_ms:.5f}ms')
-            self._tx_bytes = self._enc_ms_sum = self._enc_ms_count = 0
-            self._stats_ts = now
 
         return Gst.FlowReturn.OK
 

@@ -8,9 +8,9 @@ quad_camera_encoder:
     capture_fps: 10   # USB 카메라 캡처 fps (640x480 @ 15fps)
     target_fps:  10
 
-    zenoh_locator:   "tcp/203.250.33.77:80"
-    zenoh_key:       "nev/vehicle/camera"
-    video_stats_key: "nev/vehicle/video_stats"
+    zenoh_locator:   "tcp/127.0.0.1:7447"
+    zenoh_key:       "nev/robot/camera"
+    video_stats_key: "nev/robot/video_stats"
 
     # 대역폭 (kbps)
     bitrate:     300
@@ -26,8 +26,6 @@ quad_camera_encoder:
     # Enum "GstNvRCMode"
     # (2): cbr (3): vbr (5): cbr-ld-hq (6): cbr-hq (7): vbr-hq
     rc-mode: "cbr-ld-hq"
-
-    const-quality: 0.0
 
     gop-size: 30
     aud: true

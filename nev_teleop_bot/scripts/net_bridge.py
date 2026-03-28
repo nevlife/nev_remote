@@ -6,6 +6,7 @@ import time
 import zenoh
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import Twist
 from hunter_msgs.msg import HunterStatus
 from nev_remote_msgs.msg import EStopStatus, CmdMode, NetworkStatus, MuxStatus
@@ -33,22 +34,26 @@ class NetBridge(Node):
         conf = zenoh.Config()
         if locator:
             conf.insert_json5('connect/endpoints', json.dumps([locator]))
-        self._zsession = zenoh.open(conf)
+        try:
+            self._zsession = zenoh.open(conf)
+        except Exception as e:
+            self.get_logger().fatal(f'Zenoh connect failed: {e}')
+            raise SystemExit(1)
 
         # Publishers (vehicle → GCS)
         self._zpubs = {
             k: self._zsession.declare_publisher(k) for k in [
-                'nev/vehicle/mux',
-                'nev/vehicle/twist',
-                'nev/vehicle/network',
-                'nev/vehicle/hunter',
-                'nev/vehicle/estop',
-                'nev/vehicle/cpu',
-                'nev/vehicle/mem',
-                'nev/vehicle/gpu',
-                'nev/vehicle/disk',
-                'nev/vehicle/net',
-                'nev/vehicle/hb_ack',
+                'nev/robot/mux',
+                'nev/robot/twist',
+                'nev/robot/network',
+                'nev/robot/hunter',
+                'nev/robot/estop',
+                'nev/robot/cpu',
+                'nev/robot/mem',
+                'nev/robot/gpu',
+                'nev/robot/disk',
+                'nev/robot/net',
+                'nev/robot/hb_ack',
             ]
         }
 
@@ -61,7 +66,7 @@ class NetBridge(Node):
         ]
 
         self._lock         = threading.Lock()
-        self.last_hb_time  = 0.0
+        self.last_hb_time  = None
         self.last_ctrl_time = 0.0
         self.bridge_flag   = 0
         self.server_estop  = False
@@ -121,26 +126,41 @@ class NetBridge(Node):
     def gpu_callback(self, msg):           self.gpu_metrics = msg
 
     def _on_heartbeat(self, sample):
-        data = json.loads(bytes(sample.payload))
+        try:
+            data = json.loads(bytes(sample.payload))
+        except Exception as e:
+            self.get_logger().warning(f'heartbeat JSON parse error: {e}')
+            return
         ts = data.get('ts', 0.0)
         self.last_hb_time = time.monotonic()
-        self._zput('nev/vehicle/hb_ack', {'ts': ts})
+        self._zput('nev/robot/hb_ack', {'ts': ts})
 
     def _on_teleop(self, sample):
-        data = json.loads(bytes(sample.payload))
+        try:
+            data = json.loads(bytes(sample.payload))
+        except Exception as e:
+            self.get_logger().warning(f'teleop JSON parse error: {e}')
+            return
+        lx = max(min(float(data.get('linear_x', 0.0)), 2.0), -2.0)
+        az = max(min(float(data.get('angular_z', 0.0)), 2.0), -2.0)
         with self._lock:
-            self._pending_teleop = (
-                float(data.get('linear_x', 0.0)),
-                float(data.get('angular_z', 0.0)),
-            )
+            self._pending_teleop = (lx, az)
 
     def _on_estop(self, sample):
-        data = json.loads(bytes(sample.payload))
+        try:
+            data = json.loads(bytes(sample.payload))
+        except Exception as e:
+            self.get_logger().warning(f'estop JSON parse error: {e}')
+            return
         with self._lock:
             self._pending_estop = bool(data.get('active', False))
 
     def _on_cmd_mode(self, sample):
-        data = json.loads(bytes(sample.payload))
+        try:
+            data = json.loads(bytes(sample.payload))
+        except Exception as e:
+            self.get_logger().warning(f'cmd_mode JSON parse error: {e}')
+            return
         with self._lock:
             self._pending_mode = int(data.get('mode', -1))
 
@@ -174,7 +194,7 @@ class NetBridge(Node):
 
         if self.server_estop:
             self.bridge_flag = 1
-        elif self.last_hb_time > 0 and (now - self.last_hb_time) > self.hb_timeout:
+        elif self.last_hb_time is not None and (now - self.last_hb_time) > self.hb_timeout:
             self.bridge_flag = 3
         elif (self.current_mode == 2
               and self.last_ctrl_time > 0
@@ -186,7 +206,7 @@ class NetBridge(Node):
         if self.bridge_flag != old_flag:
             self.publish_estop()
 
-        connected   = self.bridge_flag == 0 and self.last_hb_time > 0
+        connected   = self.bridge_flag == 0 and self.last_hb_time is not None
         status_code = {0: 0, 3: 1}.get(self.bridge_flag, 2)
 
         net_msg = NetworkStatus(
@@ -210,7 +230,7 @@ class NetBridge(Node):
 
     def send_vehicle(self):
         ms = self.mux_status
-        self._zput('nev/vehicle/mux', {
+        self._zput('nev/robot/mux', {
             'ts':             time.time(),
             'requested_mode': int(ms.mode),
             'active_source':  int(ms.cmd_source),
@@ -220,7 +240,7 @@ class NetBridge(Node):
             'final_active':   bool(ms.final_active),
         })
 
-        self._zput('nev/vehicle/twist', {
+        self._zput('nev/robot/twist', {
             'ts':        time.time(),
             'nav_lx':    float(self.last_nav.linear.x),
             'nav_az':    float(self.last_nav.angular.z),
@@ -230,16 +250,16 @@ class NetBridge(Node):
             'final_az':  float(self.last_final.angular.z),
         })
 
-        connected   = self.bridge_flag == 0 and self.last_hb_time > 0
+        connected   = self.bridge_flag == 0 and self.last_hb_time is not None
         status_code = {0: 0, 3: 1}.get(self.bridge_flag, 2)
-        self._zput('nev/vehicle/network', {
+        self._zput('nev/robot/network', {
             'connected':   connected,
             'status_code': status_code,
         })
 
         if self.hunter_status:
             hs = self.hunter_status
-            self._zput('nev/vehicle/hunter', {
+            self._zput('nev/robot/hunter', {
                 'ts':             time.time(),
                 'linear_vel':     float(hs.linear_velocity),
                 'steering_angle': float(hs.steering_angle),
@@ -250,7 +270,7 @@ class NetBridge(Node):
             })
 
         es = self.estop_status
-        self._zput('nev/vehicle/estop', {
+        self._zput('nev/robot/estop', {
             'ts':         time.time(),
             'is_estop':   bool(es.is_estop),
             'bridge_flag':int(es.bridge_flag),
@@ -260,7 +280,7 @@ class NetBridge(Node):
     def send_resources(self):
         if self.cpu_metrics:
             c = self.cpu_metrics
-            self._zput('nev/vehicle/cpu', {
+            self._zput('nev/robot/cpu', {
                 'cpu_usage': float(c.usage_percent),
                 'cpu_temp':  float(c.temperature_celsius),
                 'cpu_load':  float(c.load_avg_1m),
@@ -268,13 +288,13 @@ class NetBridge(Node):
 
         if self.mem_metrics:
             m = self.mem_metrics
-            self._zput('nev/vehicle/mem', {
+            self._zput('nev/robot/mem', {
                 'ram_total': int(m.total_bytes // (1024 * 1024)),
                 'ram_used':  int(m.used_bytes  // (1024 * 1024)),
             })
 
         if self.gpu_metrics:
-            self._zput('nev/vehicle/gpu', [
+            self._zput('nev/robot/gpu', [
                 {
                     'idx':          int(g.index),
                     'gpu_usage':    float(g.utilization_percent),
@@ -288,7 +308,7 @@ class NetBridge(Node):
 
         if self.disk_metrics:
             d = self.disk_metrics
-            self._zput('nev/vehicle/disk', {
+            self._zput('nev/robot/disk', {
                 'partitions': [
                     {
                         'idx':        i,
@@ -304,7 +324,7 @@ class NetBridge(Node):
 
         if self.net_metrics:
             n = self.net_metrics
-            self._zput('nev/vehicle/net', {
+            self._zput('nev/robot/net', {
                 'net_total_ifaces':  int(n.total_interfaces),
                 'net_active_ifaces': int(n.active_interfaces),
                 'net_down_ifaces':   int(n.down_interfaces),
@@ -333,8 +353,10 @@ class NetBridge(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = NetBridge()
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:

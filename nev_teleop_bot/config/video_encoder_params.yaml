@@ -1,7 +1,7 @@
 zenoh_video_encoder:
   ros__parameters:
     image_topic: "/camera/camera/color/image_raw"
-    zenoh_locator: "tcp/203.250.33.77:80"
+    zenoh_locator: "tcp/127.0.0.1:7447"
 
     width: 1280
     height: 720
@@ -40,7 +40,7 @@ zenoh_video_encoder:
 
     # Handle Quality-of-Service events from downstream
     # Boolean. Default: false
-    qos: false
+    gst_qos: false
 
     # Zero latency operation (no reordering delay)
     # Boolean. Default: false

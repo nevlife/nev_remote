@@ -1,7 +1,7 @@
 net_bridge:
   ros__parameters:
     # Zenoh router endpoint
-    zenoh_locator: "tcp/203.250.33.77:80"
+    zenoh_locator: "tcp/127.0.0.1:7447"
 
     heartbeat_timeout: 2.0   # sec — no HB → e-stop
     control_timeout:   1.0   # sec — no teleop in REMOTE mode → e-stop
