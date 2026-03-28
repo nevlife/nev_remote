@@ -1,6 +1,6 @@
 # NEV Teleop Bot
 
-NEV 차량 탑재 텔레오퍼레이션 패키지. ROS 2 센서 데이터를 Zenoh로 GCS에 전달하고, GCS 명령을 수신합니다.
+차량 탑재 텔레오퍼레이션 패키지. ROS 2 센서 데이터를 Zenoh로 GCS에 전달하고, GCS 명령을 수신합니다.
 
 ## 패키지
 
@@ -56,7 +56,6 @@ ros2 launch nev_teleop_bot quad_camera_encoder.launch.py
 
 ## 의존성
 
-- ROS 2 (rclpy, geometry_msgs, sensor_msgs, std_msgs)
+- ROS 2
 - [eclipse-zenoh](https://zenoh.io/)
 - GStreamer + NVIDIA nvh265enc
-- OpenCV, NumPy
