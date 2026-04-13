@@ -1,0 +1,13 @@
+net_bridge:
+  ros__parameters:
+    # No heartbeat for this duration triggers e-stop (sec)
+    heartbeat_timeout: 2.0
+
+    # No teleop command in REMOTE mode for this duration triggers e-stop (sec)
+    control_timeout: 1.0
+
+    # Vehicle state publish rate (Hz)
+    vehicle_rate: 20.0
+
+    # System resource publish rate (Hz)
+    resource_rate: 1.0

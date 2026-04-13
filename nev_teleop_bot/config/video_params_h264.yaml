@@ -1,0 +1,51 @@
+video_bridge_h264:
+  ros__parameters:
+    image_topic: "/camera/camera/color/image_raw"
+
+    # Target output resolution
+    width: 1280
+    height: 720
+    # 1~60, higher = less perceived delay, more bandwidth
+    max_fps: 30.0
+
+    # CPU threads for videoconvert (1~16)
+    n-threads: 4
+
+    # Hardware acceleration (NVIDIA NVENC)
+    # true: nvh264enc (GPU), false: x264enc (CPU, SW)
+    hw_accel: true
+
+    # Encoding speed preset (GStreamer 1.20, hw_accel only)
+    # default | hp | hq | low-latency | low-latency-hq | low-latency-hp | lossless | lossless-hp
+    preset: "low-latency-hp"
+
+    # Rate control mode (GStreamer 1.20)
+    # default | constqp | cbr | vbr | vbr-minqp
+    rc-mode: "cbr"
+
+    # Target bitrate in kbit/sec (0=auto), range: 0~2048000
+    bitrate: 1000
+
+    # Max bitrate in kbit/sec (ignored in CBR mode), range: 0~2048000
+    max-bitrate: 0
+
+    # Frames between I-frames (-1=infinite), range: -1~2147483647, default: 75
+    gop-size: 60
+
+    # Access Unit delimiter, not needed for network streaming
+    aud: false
+
+    # Handle downstream QoS events
+    gst_qos: false
+
+    # Zero-latency mode — disables reordering, no B-frame latency
+    zerolatency: true
+
+    # Frame type lookahead window (0=disabled), range: 0~32
+    rc-lookahead: 0
+
+    # B-frames between I and P, range: 0~4
+    b-frames: 0
+
+    # SPS/PPS insertion interval (-1=every IDR, 0=disabled, N=every N seconds)
+    config-interval: -1
