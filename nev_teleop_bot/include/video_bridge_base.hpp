@@ -141,6 +141,19 @@ private:
         const char *parser = (codec_ == "h264") ? "h264parse" : "h265parse";
         long cfg_interval = i("config-interval");
 
+        RCLCPP_INFO(get_logger(), "[pipeline] codec=%s hw_accel=%s encoder=%s",
+                    codec_.c_str(), hw_accel ? "true" : "false", encoder_element_.c_str());
+
+        if (hw_accel) {
+            GstElementFactory *factory = gst_element_factory_find(encoder_element_.c_str());
+            if (factory) {
+                RCLCPP_INFO(get_logger(), "[pipeline] encoder '%s' found", encoder_element_.c_str());
+                gst_object_unref(factory);
+            } else {
+                RCLCPP_ERROR(get_logger(), "[pipeline] encoder '%s' NOT found — hw_accel will fail", encoder_element_.c_str());
+            }
+        }
+
         char ps[2048];
         if (hw_accel) {
             snprintf(ps, sizeof(ps),
@@ -201,9 +214,13 @@ private:
         GError *err = nullptr;
         pipeline_ = gst_parse_launch(ps, &err);
         if (!pipeline_ || err) {
-            if (err) { RCLCPP_FATAL(get_logger(), "Pipeline: %s", err->message); g_error_free(err); }
+            if (err) {
+                RCLCPP_FATAL(get_logger(), "[pipeline] FAILED: %s", err->message);
+                g_error_free(err);
+            }
             throw std::runtime_error("Pipeline failed");
         }
+        RCLCPP_INFO(get_logger(), "[pipeline] created successfully");
 
         appsrc_ = gst_bin_get_by_name(GST_BIN(pipeline_), "appsrc");
         g_object_set(appsrc_, "max-bytes", (guint64)(w * h * 3 * 2), "block", FALSE, "leaky-type", 2, nullptr);
