@@ -1,0 +1,24 @@
+# Vehicle-specific ROS topics bridged to Zenoh.
+# Fields are auto-extracted from the ROS message type.
+# Published to: nev/robot/{vehicle_id}/vehicle/{name}
+#
+# Required:
+#   topic_name    ROS topic to subscribe
+#   msg_type      ROS message type (e.g. hunter_msgs/msg/HunterStatus)
+#
+# Optional:
+#   name          Zenoh subtopic name override (default: snake_case of msg_type class)
+#   rate          "vehicle" (default) | "resource"
+#   ros_qos:
+#     reliability   "reliable" (default) | "best_effort"
+#     depth         queue size (default: 10)
+#   zenoh_qos:
+#     reliability   "reliable" | "best_effort" (default)
+#     congestion    "drop" (default) | "block"
+#     priority      real_time | interactive_high | interactive_low
+#                   data_high | data (default) | data_low | background
+
+teleop_topics:
+
+  - topic_name: /hunter_status
+    msg_type: hunter_msgs/msg/HunterStatus

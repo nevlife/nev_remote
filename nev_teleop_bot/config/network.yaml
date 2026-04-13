@@ -1,11 +1,15 @@
+/**:
+  ros__parameters:
+    vehicle_id: "0"
+
 net_bridge:
   ros__parameters:
     telemetry_locator: "tcp/127.0.0.1:7447"
 
 video_bridge_h264:
   ros__parameters:
-    video_locator: "tcp/127.0.0.1:7447"
+    video_locator: "udp/127.0.0.1:7447"
 
 video_bridge_h265:
   ros__parameters:
-    video_locator: "tcp/127.0.0.1:7447"
+    video_locator: "udp/127.0.0.1:7447"

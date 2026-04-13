@@ -5,16 +5,21 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    pkg_nev_teleop_bot = get_package_share_directory('nev_teleop_bot')
-    network_file = os.path.join(pkg_nev_teleop_bot, 'config', 'network.yaml')
-    params_file = os.path.join(pkg_nev_teleop_bot, 'config', 'net_bridge_params.yaml')
+    pkg = get_package_share_directory('nev_teleop_bot')
+    network_file = os.path.join(pkg, 'config', 'network.yaml')
+    params_file = os.path.join(pkg, 'config', 'net_bridge_params.yaml')
+    teleop_topics_config = os.path.join(pkg, 'config', 'teleop_topics.yaml')
 
     net_bridge_node = Node(
         package='nev_teleop_bot',
         executable='net_bridge.py',
         name='net_bridge',
         output='screen',
-        parameters=[network_file, params_file],
+        parameters=[
+            network_file,
+            params_file,
+            {'teleop_topics_config': teleop_topics_config},
+        ],
     )
 
     return LaunchDescription([

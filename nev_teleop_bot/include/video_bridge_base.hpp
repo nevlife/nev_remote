@@ -29,6 +29,7 @@ public:
     {
         declare_parameter("image_topic", "/camera/camera/color/image_raw");
         declare_parameter("video_locator", "tcp/127.0.0.1:7447");
+        declare_parameter("vehicle_id", "0");
         declare_parameter("width", 1280);
         declare_parameter("height", 720);
         declare_parameter("max_fps", 30.0);
@@ -48,6 +49,7 @@ public:
 
         image_topic_    = get_parameter("image_topic").as_string();
         zenoh_locator_  = get_parameter("video_locator").as_string();
+        vehicle_id_     = get_parameter("vehicle_id").as_string();
         target_w_       = get_parameter("width").as_int();
         target_h_       = get_parameter("height").as_int();
         max_fps_        = get_parameter("max_fps").as_double();
@@ -85,9 +87,11 @@ private:
             throw std::runtime_error("Zenoh connect failed");
         RCLCPP_INFO(get_logger(), "Zenoh → %s", zenoh_locator_.empty() ? "auto" : zenoh_locator_.c_str());
 
+        std::string ke_cam_str   = "nev/robot/" + vehicle_id_ + "/camera";
+        std::string ke_stats_str = "nev/robot/" + vehicle_id_ + "/video_stats";
         z_view_keyexpr_t ke_cam, ke_stats;
-        z_view_keyexpr_from_str(&ke_cam, "nev/robot/camera");
-        z_view_keyexpr_from_str(&ke_stats, "nev/robot/video_stats");
+        z_view_keyexpr_from_str(&ke_cam, ke_cam_str.c_str());
+        z_view_keyexpr_from_str(&ke_stats, ke_stats_str.c_str());
 
         z_publisher_options_t opts;
         z_publisher_options_default(&opts);
@@ -297,6 +301,7 @@ private:
 
     std::string codec_, encoder_element_, caps_format_, gst_fmt_;
     std::string image_topic_, zenoh_locator_;
+    std::string vehicle_id_;
     int64_t target_w_, target_h_;
     double max_fps_, frame_interval_;
     double last_push_ = 0, log_time_ = 0;

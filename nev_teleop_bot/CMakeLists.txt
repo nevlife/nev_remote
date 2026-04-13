@@ -27,13 +27,9 @@ target_include_directories(video_bridge_h264 PRIVATE ${BRIDGE_INCS})
 target_link_libraries(video_bridge_h264 ${BRIDGE_LIBS})
 ament_target_dependencies(video_bridge_h264 rclcpp sensor_msgs)
 
-add_executable(test_multi_cam_pub test/test_multi_cam_pub.cpp)
-target_include_directories(test_multi_cam_pub PRIVATE ${GST_INCLUDE_DIRS})
-target_link_libraries(test_multi_cam_pub ${GST_LIBRARIES} gstapp-1.0)
-ament_target_dependencies(test_multi_cam_pub rclcpp sensor_msgs)
-
-install(TARGETS video_bridge_h265 video_bridge_h264 test_multi_cam_pub DESTINATION lib/${PROJECT_NAME})
+install(TARGETS video_bridge_h265 video_bridge_h264 DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS scripts/net_bridge.py DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY scripts/net_bridge DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)

@@ -24,7 +24,6 @@ CAM_QOS = QoSProfile(
     depth=10,
 )
 
-# 카메라 설정: (디바이스, 토픽명, frame_id)
 CAMERAS = [
     ('/dev/cam_front_left',  '/camera/front_left/image_raw',  'cam_front_left'),
     ('/dev/cam_side_left',   '/camera/side_left/image_raw',   'cam_side_left'),
@@ -39,14 +38,12 @@ CALIB_JSON = os.path.expanduser(
 
 
 def build_undistort_maps(calib_w, calib_h, out_w, out_h):
-    """캘리브레이션 파일에서 fisheye undistort map 생성 (출력 해상도에 맞게 스케일링)"""
     with open(CALIB_JSON) as f:
         calib = json.load(f)["ELP-USB16MP01-BL180-2048x1536"]["Intrinsic"]
 
     K = np.array(calib["K"]).reshape(3, 3)
-    D = np.array(calib["D"][1:]).reshape(-1, 1)  # fisheye: k1~k4
+    D = np.array(calib["D"][1:]).reshape(-1, 1)
 
-    # 캘리브레이션 해상도 → 출력 해상도로 K 스케일링
     sx = out_w / calib_w
     sy = out_h / calib_h
     K_scaled = K.copy()
@@ -66,8 +63,6 @@ def build_undistort_maps(calib_w, calib_h, out_w, out_h):
 
 
 class CamStream:
-    """단일 카메라 GStreamer 파이프라인 + fisheye 보정 + ROS 퍼블리셔"""
-
     def __init__(self, node: Node, device: str, topic: str, frame_id: str,
                  map1: np.ndarray, map2: np.ndarray):
         self._node = node
@@ -119,12 +114,10 @@ class CamStream:
             if not ok:
                 continue
 
-            # GStreamer BGR → numpy
             frame = np.ndarray(
                 (HEIGHT, WIDTH, 3), dtype=np.uint8, buffer=map_info.data
             )
 
-            # fisheye undistort
             t2 = time.perf_counter()
             undistorted = cv2.remap(frame, self._map1, self._map2, cv2.INTER_LINEAR)
             t3 = time.perf_counter()
@@ -165,7 +158,6 @@ class MultiCamPub(Node):
         super().__init__('test_multi_cam_pub')
         Gst.init(None)
 
-        # undistort map 한 번만 계산 (모든 카메라 동일 모델)
         self.get_logger().info('Building fisheye undistort maps...')
         map1, map2 = build_undistort_maps(2048, 1536, WIDTH, HEIGHT)
         self.get_logger().info('Undistort maps ready')

@@ -10,7 +10,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 
-WIDTH, HEIGHT, FPS = 1280, 720, 30
+WIDTH, HEIGHT, FPS = 1920, 1080, 30
 
 
 class CamTopicPub(Node):

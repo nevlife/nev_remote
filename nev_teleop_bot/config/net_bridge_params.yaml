@@ -11,3 +11,6 @@ net_bridge:
 
     # System resource publish rate (Hz)
     resource_rate: 1.0
+
+    # Vehicle-specific topics config (optional, empty = no dynamic topics)
+    teleop_topics_config: ""
