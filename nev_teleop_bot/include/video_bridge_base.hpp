@@ -110,9 +110,26 @@ private:
         if (dt_ms > input_max_ms_) input_max_ms_ = dt_ms;
 
         if (now - log_time_ >= 2.0) {
-            RCLCPP_INFO(get_logger(), "[enc] cb=%.1ffps drop=%d last_dt=%.0fms",
-                        cb_count_ / (now - log_time_), drop_count_, dt_ms);
-            cb_count_ = 0; drop_count_ = 0; log_time_ = now;
+            RCLCPP_INFO(get_logger(), "[enc] cb=%.1ffps out=%d drop=%d last_dt=%.0fms",
+                        cb_count_ / (now - log_time_), enc_out_count_, drop_count_, dt_ms);
+            cb_count_ = 0; drop_count_ = 0; enc_out_count_ = 0; log_time_ = now;
+
+            if (pipeline_) {
+                GstBus *bus = gst_element_get_bus(pipeline_);
+                GstMessage *msg_gst;
+                while ((msg_gst = gst_bus_pop_filtered(bus, static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_WARNING)))) {
+                    GError *gerr = nullptr; gchar *dbg = nullptr;
+                    if (GST_MESSAGE_TYPE(msg_gst) == GST_MESSAGE_ERROR) {
+                        gst_message_parse_error(msg_gst, &gerr, &dbg);
+                        RCLCPP_ERROR(get_logger(), "[gst] ERROR: %s | %s", gerr->message, dbg ? dbg : "");
+                    } else {
+                        gst_message_parse_warning(msg_gst, &gerr, &dbg);
+                        RCLCPP_WARN(get_logger(), "[gst] WARN: %s | %s", gerr->message, dbg ? dbg : "");
+                    }
+                    g_error_free(gerr); g_free(dbg); gst_message_unref(msg_gst);
+                }
+                gst_object_unref(bus);
+            }
         }
 
         if (gst_fmt_.empty()) {
@@ -233,7 +250,22 @@ private:
         gst_app_sink_set_callbacks(GST_APP_SINK(sink), &cbs, this, nullptr);
         gst_object_unref(sink);
 
-        gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+        GstStateChangeReturn ret = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+        if (ret == GST_STATE_CHANGE_FAILURE) {
+            RCLCPP_ERROR(get_logger(), "[pipeline] state change to PLAYING failed");
+            GstBus *bus = gst_element_get_bus(pipeline_);
+            GstMessage *msg = gst_bus_pop_filtered(bus, GST_MESSAGE_ERROR);
+            if (msg) {
+                GError *gerr = nullptr; gchar *dbg = nullptr;
+                gst_message_parse_error(msg, &gerr, &dbg);
+                RCLCPP_ERROR(get_logger(), "[pipeline] GStreamer error: %s", gerr->message);
+                RCLCPP_ERROR(get_logger(), "[pipeline] debug: %s", dbg ? dbg : "none");
+                g_error_free(gerr); g_free(dbg); gst_message_unref(msg);
+            }
+            gst_object_unref(bus);
+        } else {
+            RCLCPP_INFO(get_logger(), "[pipeline] state → PLAYING (ret=%d)", ret);
+        }
         RCLCPP_INFO(get_logger(), "Streaming: %ldx%ld @ %.0ffps", target_w_, target_h_, max_fps_);
     }
 
@@ -241,6 +273,7 @@ private:
     {
         GstSample *sample = gst_app_sink_pull_sample(sink);
         if (!sample) return GST_FLOW_OK;
+        enc_out_count_++;
 
         double enc_ms = 0;
         double pt = push_time_.load();
@@ -322,7 +355,7 @@ private:
     int64_t target_w_, target_h_;
     double max_fps_, frame_interval_;
     double last_push_ = 0, log_time_ = 0;
-    int cb_count_ = 0, drop_count_ = 0;
+    int cb_count_ = 0, drop_count_ = 0, enc_out_count_ = 0;
     std::atomic<double> push_time_{0};
     GstElement *pipeline_ = nullptr, *appsrc_ = nullptr;
     z_owned_session_t zsession_;
