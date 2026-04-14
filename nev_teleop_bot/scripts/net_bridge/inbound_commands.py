@@ -16,7 +16,10 @@ class PendingCommands:
 
 class InboundHandler:
 
-    def __init__(self, vehicle_id: str, transport: ZenohTransport, logger, wheelbase: float = 0.650):
+    def __init__(
+        self, vehicle_id: str, transport: ZenohTransport,
+        logger, wheelbase: float = 0.650,
+    ):
         self._vid = vehicle_id
         self._transport = transport
         self._logger = logger
@@ -40,6 +43,16 @@ class InboundHandler:
             self._transport.put(f"nev/robot/{self._vid}/server_pong", {"ts": ts})
         except Exception as e:
             self._logger.warning(f"server_ping parse error: {e}")
+
+    def on_bot_ping(self, sample):
+        try:
+            data = json.loads(bytes(sample.payload))
+            ts = data.get("ts")
+            if ts is None:
+                return
+            self._transport.put(f"nev/robot/{self._vid}/bot_pong", {"ts": ts})
+        except Exception as e:
+            self._logger.warning(f"bot_ping parse error: {e}")
 
     def on_teleop(self, sample):
         try:

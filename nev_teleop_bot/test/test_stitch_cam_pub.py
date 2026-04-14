@@ -18,7 +18,6 @@ CAM_QOS = QoSProfile(
     depth=10,
 )
 
-# 왼→오 순서로 이어붙일 토픽
 SRC_TOPICS = [
     '/camera/front_left/image_raw',
     '/camera/side_left/image_raw',
@@ -40,7 +39,8 @@ class StitchCamPub(Node):
         self._running = True
 
         for i, topic in enumerate(SRC_TOPICS):
-            self.create_subscription(Image, topic, lambda msg, idx=i: self._on_image(idx, msg), CAM_QOS)
+            self.create_subscription(Image, topic, lambda msg,
+                                     idx=i: self._on_image(idx, msg), CAM_QOS)
             self.get_logger().info(f'Subscribed: {topic}')
 
         self._pub = self.create_publisher(Image, DST_TOPIC, CAM_QOS)

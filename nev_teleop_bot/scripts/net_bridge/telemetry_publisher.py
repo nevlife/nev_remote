@@ -10,6 +10,8 @@ class TelemetrySerializer:
         last_nav,
         last_teleop,
         last_final,
+        current_speed: float,
+        current_steer_angle: float,
         estop_status,
     ) -> dict[str, dict]:
         ts = time.time()
@@ -34,6 +36,8 @@ class TelemetrySerializer:
             "teleop_az": float(last_teleop.angular.z),
             "final_lx": float(last_final.linear.x),
             "final_az": float(last_final.angular.z),
+            "current_speed": float(current_speed),
+            "current_steer_angle": float(current_steer_angle),
         }
 
         payloads[f"{prefix}/estop"] = {

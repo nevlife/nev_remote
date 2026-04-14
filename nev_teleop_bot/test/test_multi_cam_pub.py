@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+from sensor_msgs.msg import Image
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+from rclpy.node import Node
+import rclpy
+from gi.repository import Gst
 import array
 import json
 import os
@@ -8,11 +13,6 @@ import numpy as np
 import cv2
 import gi
 gi.require_version('Gst', '1.0')
-from gi.repository import Gst
-import rclpy
-from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
-from sensor_msgs.msg import Image
 
 WIDTH, HEIGHT, FPS = 1280, 720, 15
 FOCAL_SCALE = 1.0
@@ -93,7 +93,8 @@ class CamStream:
             node.get_logger().fatal(f'[{frame_id}] Failed to open {device}: {err.message}')
             raise SystemExit(1)
 
-        node.get_logger().info(f'[{frame_id}] Opened {device} — {WIDTH}x{HEIGHT}@{FPS}fps (undistort ON)')
+        node.get_logger().info(
+            f'[{frame_id}] Opened {device} — {WIDTH}x{HEIGHT}@{FPS}fps (undistort ON)')
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 

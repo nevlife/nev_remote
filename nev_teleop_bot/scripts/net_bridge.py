@@ -4,12 +4,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import rclpy
-from rclpy.node import Node
-from rclpy.executors import MultiThreadedExecutor
-from geometry_msgs.msg import Twist
-from nev_teleop_bot_msgs.msg import EStopStatus, CmdMode, MuxStatus
-from system_monitor_msgs.msg import (
+import rclpy  # noqa: E402
+from rclpy.node import Node  # noqa: E402
+from rclpy.executors import MultiThreadedExecutor  # noqa: E402
+from geometry_msgs.msg import Twist  # noqa: E402
+from std_msgs.msg import Float64  # noqa: E402
+from nev_teleop_bot_msgs.msg import EStopStatus, CmdMode, MuxStatus  # noqa: E402
+from system_monitor_msgs.msg import (  # noqa: E402
     CpuMetrics,
     MemoryMetrics,
     DiskMetrics,
@@ -17,12 +18,11 @@ from system_monitor_msgs.msg import (
     GpuMetrics,
 )
 
-from net_bridge import (
+from net_bridge import (  # noqa: E402
     ZenohTransport,
     InboundHandler,
     HealthMonitor,
     TelemetrySerializer,
-    VehicleTopicLoader,
 )
 
 
@@ -36,8 +36,9 @@ class NetBridge(Node):
         self.declare_parameter("control_timeout", 1.0)
         self.declare_parameter("vehicle_rate", 20.0)
         self.declare_parameter("resource_rate", 1.0)
-        self.declare_parameter("teleop_topics_config", "")
         self.declare_parameter("wheelbase", 0.650)
+        self.declare_parameter("speed_topic", "/vehicle/speed")
+        self.declare_parameter("angle_topic", "/vehicle/steer_angle")
 
         locator = self.get_parameter("telemetry_locator").value
         vid = self.get_parameter("vehicle_id").value
@@ -45,8 +46,9 @@ class NetBridge(Node):
         ctrl_timeout = self.get_parameter("control_timeout").value
         v_rate = self.get_parameter("vehicle_rate").value
         r_rate = self.get_parameter("resource_rate").value
-        topics_cfg = self.get_parameter("teleop_topics_config").value
         wheelbase = self.get_parameter("wheelbase").value
+        speed_topic = self.get_parameter("speed_topic").value
+        angle_topic = self.get_parameter("angle_topic").value
 
         self._vid = vid
         self.server_estop = False
@@ -56,7 +58,6 @@ class NetBridge(Node):
         self.transport = ZenohTransport(locator, logger)
         self.inbound = InboundHandler(vid, self.transport, logger, wheelbase)
         self.health = HealthMonitor(hb_timeout, ctrl_timeout)
-        self.topics = VehicleTopicLoader()
 
         for suffix in (
             "mux",
@@ -68,22 +69,35 @@ class NetBridge(Node):
             "disk",
             "net",
             "server_pong",
+            "bot_pong",
         ):
             self.transport.declare_publisher(f"nev/robot/{vid}/{suffix}")
 
-        self.transport.declare_subscriber(f"nev/gcs/{vid}/server_ping", self.inbound.on_server_ping)
-        self.transport.declare_subscriber(f"nev/gcs/{vid}/teleop", self.inbound.on_teleop)
-        self.transport.declare_subscriber(f"nev/gcs/{vid}/estop", self.inbound.on_estop)
-        self.transport.declare_subscriber(f"nev/gcs/{vid}/cmd_mode", self.inbound.on_cmd_mode)
-
-        if topics_cfg:
-            self.topics.load(topics_cfg, self, self.transport, vid)
+        self.transport.declare_subscriber(
+            f"nev/gcs/{vid}/server_ping",
+            self.inbound.on_server_ping,
+        )
+        self.transport.declare_subscriber(
+            f"nev/gcs/{vid}/bot_ping",
+            self.inbound.on_bot_ping,
+        )
+        self.transport.declare_subscriber(
+            f"nev/gcs/{vid}/teleop", self.inbound.on_teleop
+        )
+        self.transport.declare_subscriber(
+            f"nev/gcs/{vid}/estop", self.inbound.on_estop
+        )
+        self.transport.declare_subscriber(
+            f"nev/gcs/{vid}/cmd_mode", self.inbound.on_cmd_mode
+        )
 
         self.mux_status = MuxStatus()
         self.estop_status = EStopStatus()
         self.last_nav = Twist()
         self.last_teleop = Twist()
         self.last_final = Twist()
+        self.current_speed: float = 0.0
+        self.current_steer_angle: float = 0.0
         self.cpu_metrics: CpuMetrics | None = None
         self.mem_metrics: MemoryMetrics | None = None
         self.disk_metrics: DiskMetrics | None = None
@@ -91,33 +105,52 @@ class NetBridge(Node):
         self.gpu_metrics: GpuMetrics | None = None
 
         self.create_subscription(
-            MuxStatus, "/vehicle/mux_status", lambda m: setattr(self, "mux_status", m), 10
+            MuxStatus, "/vehicle/mux_status",
+            lambda m: setattr(self, "mux_status", m), 10,
         )
         self.create_subscription(
-            EStopStatus, "/vehicle/estop_status", lambda m: setattr(self, "estop_status", m), 10
-        )
-        self.create_subscription(Twist, "/cmd_vel", lambda m: setattr(self, "last_nav", m), 10)
-        self.create_subscription(
-            Twist, "/remote/teleop_cmd", lambda m: setattr(self, "last_teleop", m), 10
-        )
-        self.create_subscription(Twist, "/final_cmd", lambda m: setattr(self, "last_final", m), 10)
-        self.create_subscription(
-            CpuMetrics, "/system_monitor/cpu", lambda m: setattr(self, "cpu_metrics", m), 10
+            EStopStatus, "/vehicle/estop_status",
+            lambda m: setattr(self, "estop_status", m), 10,
         )
         self.create_subscription(
-            MemoryMetrics, "/system_monitor/memory", lambda m: setattr(self, "mem_metrics", m), 10
+            Twist, "/cmd_vel",
+            lambda m: setattr(self, "last_nav", m), 10,
         )
         self.create_subscription(
-            DiskMetrics, "/system_monitor/disk", lambda m: setattr(self, "disk_metrics", m), 10
+            Twist, "/remote/teleop_cmd",
+            lambda m: setattr(self, "last_teleop", m), 10,
         )
         self.create_subscription(
-            NetworkMetrics,
-            "/system_monitor/network",
-            lambda m: setattr(self, "net_metrics", m),
-            10,
+            Twist, "/final_cmd",
+            lambda m: setattr(self, "last_final", m), 10,
         )
         self.create_subscription(
-            GpuMetrics, "/system_monitor/gpu", lambda m: setattr(self, "gpu_metrics", m), 10
+            Float64, speed_topic,
+            lambda m: setattr(self, "current_speed", m.data), 10,
+        )
+        self.create_subscription(
+            Float64, angle_topic,
+            lambda m: setattr(self, "current_steer_angle", m.data), 10,
+        )
+        self.create_subscription(
+            CpuMetrics, "/system_monitor/cpu",
+            lambda m: setattr(self, "cpu_metrics", m), 10,
+        )
+        self.create_subscription(
+            MemoryMetrics, "/system_monitor/memory",
+            lambda m: setattr(self, "mem_metrics", m), 10,
+        )
+        self.create_subscription(
+            DiskMetrics, "/system_monitor/disk",
+            lambda m: setattr(self, "disk_metrics", m), 10,
+        )
+        self.create_subscription(
+            NetworkMetrics, "/system_monitor/network",
+            lambda m: setattr(self, "net_metrics", m), 10,
+        )
+        self.create_subscription(
+            GpuMetrics, "/system_monitor/gpu",
+            lambda m: setattr(self, "gpu_metrics", m), 10,
         )
 
         self._teleop_pub = self.create_publisher(Twist, "/remote/teleop_cmd", 10)
@@ -128,7 +161,11 @@ class NetBridge(Node):
         self.create_timer(1.0 / r_rate, self._send_resources)
         self.create_timer(0.2, self._check_heartbeat)
 
-        logger.info(f'net_bridge started (vehicle_id={vid}) -> {locator or "auto-discovery"}')
+        logger.info(
+            f"net_bridge started (vehicle_id={vid}) "
+            f'-> {locator or "auto-discovery"}'
+        )
+        logger.info(f"speed_topic={speed_topic}, angle_topic={angle_topic}")
 
     def _process_commands(self):
         cmds = self.inbound.drain_pending()
@@ -175,12 +212,12 @@ class NetBridge(Node):
             self.last_nav,
             self.last_teleop,
             self.last_final,
+            self.current_speed,
+            self.current_steer_angle,
             self.estop_status,
         )
         for key, data in payloads.items():
             self.transport.put(key, data)
-
-        self.topics.publish("vehicle", self.transport)
 
     def _send_resources(self):
         payloads = TelemetrySerializer.serialize_resources(
@@ -193,8 +230,6 @@ class NetBridge(Node):
         )
         for key, data in payloads.items():
             self.transport.put(key, data)
-
-        self.topics.publish("resource", self.transport)
 
     def destroy_node(self):
         self.transport.close()

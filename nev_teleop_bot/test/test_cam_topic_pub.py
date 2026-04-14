@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
+from sensor_msgs.msg import Image
+from rclpy.qos import qos_profile_sensor_data
+from rclpy.node import Node
+import rclpy
+from gi.repository import Gst
 import array
 import time
 import threading
 import gi
 gi.require_version('Gst', '1.0')
-from gi.repository import Gst
-import rclpy
-from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Image
 
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
 
@@ -17,21 +17,24 @@ class CamTopicPub(Node):
     def __init__(self):
         super().__init__('test_cam_topic_pub')
         Gst.init(None)
-        self._pub = self.create_publisher(Image, '/camera/camera/color/image_raw', qos_profile_sensor_data)
+        self._pub = self.create_publisher(
+            Image, '/camera/camera/color/image_raw', qos_profile_sensor_data)
         self._running = True
 
         pipeline_str = (
             f'v4l2src device=/dev/video0 ! '
             f'image/jpeg,width={WIDTH},height={HEIGHT},framerate={FPS}/1 ! '
             f'jpegdec ! videoconvert ! '
-            f'video/x-raw,format=BGR ! appsink name=sink emit-signals=false drop=true max-buffers=1 sync=false'
+            f'video/x-raw,format=BGR ! '
+            f'appsink name=sink emit-signals=false drop=true max-buffers=1 sync=false'
         )
         self._pipeline = Gst.parse_launch(pipeline_str)
         self._sink = self._pipeline.get_by_name('sink')
         self._pipeline.set_state(Gst.State.PLAYING)
 
         bus = self._pipeline.get_bus()
-        msg = bus.timed_pop_filtered(5 * Gst.SECOND, Gst.MessageType.STATE_CHANGED | Gst.MessageType.ERROR)
+        msg = bus.timed_pop_filtered(
+            5 * Gst.SECOND, Gst.MessageType.STATE_CHANGED | Gst.MessageType.ERROR)
         if msg and msg.type == Gst.MessageType.ERROR:
             err, _ = msg.parse_error()
             self.get_logger().fatal(f'Failed to open camera: {err.message}')
