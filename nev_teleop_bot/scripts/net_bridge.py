@@ -8,7 +8,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import Twist
-from nev_teleop_bot_msgs.msg import EStopStatus, CmdMode, NetworkStatus, MuxStatus
+from nev_teleop_bot_msgs.msg import EStopStatus, CmdMode, MuxStatus
 from system_monitor_msgs.msg import (
     CpuMetrics,
     MemoryMetrics,
@@ -37,6 +37,7 @@ class NetBridge(Node):
         self.declare_parameter("vehicle_rate", 20.0)
         self.declare_parameter("resource_rate", 1.0)
         self.declare_parameter("teleop_topics_config", "")
+        self.declare_parameter("wheelbase", 0.650)
 
         locator = self.get_parameter("telemetry_locator").value
         vid = self.get_parameter("vehicle_id").value
@@ -45,6 +46,7 @@ class NetBridge(Node):
         v_rate = self.get_parameter("vehicle_rate").value
         r_rate = self.get_parameter("resource_rate").value
         topics_cfg = self.get_parameter("teleop_topics_config").value
+        wheelbase = self.get_parameter("wheelbase").value
 
         self._vid = vid
         self.server_estop = False
@@ -52,29 +54,27 @@ class NetBridge(Node):
 
         logger = self.get_logger()
         self.transport = ZenohTransport(locator, logger)
-        self.inbound = InboundHandler(vid, self.transport, logger)
+        self.inbound = InboundHandler(vid, self.transport, logger, wheelbase)
         self.health = HealthMonitor(hb_timeout, ctrl_timeout)
         self.topics = VehicleTopicLoader()
 
         for suffix in (
             "mux",
             "twist",
-            "network",
             "estop",
             "cpu",
             "mem",
             "gpu",
             "disk",
             "net",
-            "pong",
+            "server_pong",
         ):
             self.transport.declare_publisher(f"nev/robot/{vid}/{suffix}")
 
-        self.transport.declare_subscriber(f"nev/gcs/{vid}/heartbeat", self.inbound.on_heartbeat)
+        self.transport.declare_subscriber(f"nev/gcs/{vid}/server_ping", self.inbound.on_server_ping)
         self.transport.declare_subscriber(f"nev/gcs/{vid}/teleop", self.inbound.on_teleop)
         self.transport.declare_subscriber(f"nev/gcs/{vid}/estop", self.inbound.on_estop)
         self.transport.declare_subscriber(f"nev/gcs/{vid}/cmd_mode", self.inbound.on_cmd_mode)
-        self.transport.declare_subscriber(f"nev/gcs/{vid}/ping", self.inbound.on_ping)
 
         if topics_cfg:
             self.topics.load(topics_cfg, self, self.transport, vid)
@@ -123,8 +123,6 @@ class NetBridge(Node):
         self._teleop_pub = self.create_publisher(Twist, "/remote/teleop_cmd", 10)
         self._estop_pub = self.create_publisher(EStopStatus, "/remote/estop_status", 10)
         self._mode_pub = self.create_publisher(CmdMode, "/remote/cmd_mode", 10)
-        self._network_pub = self.create_publisher(NetworkStatus, "/remote/network_status", 10)
-
         self.create_timer(0.05, self._process_commands)
         self.create_timer(1.0 / v_rate, self._send_vehicle)
         self.create_timer(1.0 / r_rate, self._send_resources)
@@ -159,13 +157,6 @@ class NetBridge(Node):
         if state.flag_changed:
             self._publish_estop(state.bridge_flag)
 
-        self._network_pub.publish(
-            NetworkStatus(
-                connected=state.connected,
-                status_code=state.status_code,
-            )
-        )
-
     def _publish_estop(self, bridge_flag: int | None = None):
         if bridge_flag is None:
             bridge_flag = self.health._prev_flag
@@ -178,21 +169,12 @@ class NetBridge(Node):
         )
 
     def _send_vehicle(self):
-        state = self.health.evaluate(
-            self.inbound.last_hb_time,
-            self.inbound.last_ctrl_time,
-            self.current_mode,
-            self.server_estop,
-        )
-
         payloads = TelemetrySerializer.serialize_vehicle(
             self._vid,
             self.mux_status,
             self.last_nav,
             self.last_teleop,
             self.last_final,
-            state.connected,
-            state.status_code,
             self.estop_status,
         )
         for key, data in payloads.items():

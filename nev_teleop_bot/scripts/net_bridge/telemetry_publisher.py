@@ -10,8 +10,6 @@ class TelemetrySerializer:
         last_nav,
         last_teleop,
         last_final,
-        connected: bool,
-        status_code: int,
         estop_status,
     ) -> dict[str, dict]:
         ts = time.time()
@@ -36,11 +34,6 @@ class TelemetrySerializer:
             "teleop_az": float(last_teleop.angular.z),
             "final_lx": float(last_final.linear.x),
             "final_az": float(last_final.angular.z),
-        }
-
-        payloads[f"{prefix}/network"] = {
-            "connected": connected,
-            "status_code": status_code,
         }
 
         payloads[f"{prefix}/estop"] = {
