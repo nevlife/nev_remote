@@ -176,7 +176,7 @@ private:
             snprintf(ps, sizeof(ps),
                 "appsrc name=appsrc format=time is-live=true do-timestamp=true "
                 "caps=\"video/x-raw,format=%s,width=%d,height=%d,framerate=%d/1\" ! "
-                "videoconvert n-threads=%d ! "
+                "videoconvert n-threads=%d ! videoscale ! "  // videoconvert: 색상만, videoscale: 해상도
                 "video/x-raw,format=NV12,width=%ld,height=%ld ! "
                 "%s preset=%s rc-mode=%s bitrate=%ld max-bitrate=%ld "
                 "gop-size=%ld aud=%s qos=%s zerolatency=%s "
@@ -196,7 +196,7 @@ private:
             snprintf(ps, sizeof(ps),
                 "appsrc name=appsrc format=time is-live=true do-timestamp=true "
                 "caps=\"video/x-raw,format=%s,width=%d,height=%d,framerate=%d/1\" ! "
-                "videoconvert n-threads=%d ! "
+                "videoconvert n-threads=%d ! videoscale ! "  // videoconvert: 색상만, videoscale: 해상도
                 "video/x-raw,format=I420,width=%ld,height=%ld ! "
                 "x264enc tune=zerolatency speed-preset=ultrafast bitrate=%ld "
                 "key-int-max=%ld bframes=%ld byte-stream=true aud=%s ! "
@@ -212,7 +212,7 @@ private:
             snprintf(ps, sizeof(ps),
                 "appsrc name=appsrc format=time is-live=true do-timestamp=true "
                 "caps=\"video/x-raw,format=%s,width=%d,height=%d,framerate=%d/1\" ! "
-                "videoconvert n-threads=%d ! "
+                "videoconvert n-threads=%d ! videoscale ! "  // videoconvert: 색상만, videoscale: 해상도
                 "video/x-raw,format=I420,width=%ld,height=%ld ! "
                 "x265enc tune=zerolatency speed-preset=ultrafast bitrate=%ld "
                 "key-int-max=%ld option-string=\"bframes=%ld\" ! "
