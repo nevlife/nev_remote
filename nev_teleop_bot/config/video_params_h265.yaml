@@ -17,7 +17,7 @@ video_bridge_h265:
 
     # Encoding speed preset (GStreamer 1.20, hw_accel only)
     # default | hp | hq | low-latency | low-latency-hq | low-latency-hp | lossless | lossless-hp
-    preset: "low-latency-hp"
+    preset: "low-latency"  # "low-latency-hp" may not be supported depending on GStreamer version
 
     # Rate control mode (GStreamer 1.20)
     # default | constqp | cbr | vbr | vbr-minqp
