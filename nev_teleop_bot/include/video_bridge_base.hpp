@@ -59,7 +59,7 @@ public:
     gst_init(nullptr, nullptr);
     init_zenoh();
 
-    auto qos = rclcpp::QoS(5).best_effort();
+    auto qos = rclcpp::QoS(5).reliable();
     sub_ = create_subscription<ImageMsg>(
       image_topic_, qos,
       [this](const ImageMsg::SharedPtr msg) {on_image(msg);});

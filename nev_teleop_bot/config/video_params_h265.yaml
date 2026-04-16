@@ -3,7 +3,7 @@ video_bridge_h265:
     image_topic: "/camera/camera/color/image_raw"
 
     # Target output resolution
-    width: 1280
+    width: 6400
     height: 720
     # 1~60, higher = less perceived delay, more bandwidth
     max_fps: 30.0
@@ -13,7 +13,7 @@ video_bridge_h265:
 
     # Hardware acceleration (NVIDIA NVENC)
     # true: nvh265enc (GPU), false: x265enc (CPU, SW)
-    hw_accel: true
+    hw_accel: false
 
     # Encoding speed preset (GStreamer 1.20, hw_accel only)
     # default | hp | hq | low-latency | low-latency-hq | low-latency-hp | lossless | lossless-hp

@@ -12,6 +12,8 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(PkgConfig REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(nlohmann_json REQUIRED)
 pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0)
 
 set(BRIDGE_INCS ${CMAKE_CURRENT_SOURCE_DIR}/include ${GST_INCLUDE_DIRS})
@@ -27,7 +29,23 @@ target_include_directories(video_bridge_h264 PRIVATE ${BRIDGE_INCS})
 target_link_libraries(video_bridge_h264 ${BRIDGE_LIBS})
 ament_target_dependencies(video_bridge_h264 rclcpp sensor_msgs)
 
-install(TARGETS video_bridge_h265 video_bridge_h264 DESTINATION lib/${PROJECT_NAME})
+add_executable(multi_cam_pub_node src/multi_cam_pub_node.cpp)
+target_include_directories(multi_cam_pub_node PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include ${GST_INCLUDE_DIRS})
+target_link_libraries(multi_cam_pub_node
+  ${GST_LIBRARIES} opencv_core opencv_imgproc opencv_calib3d
+  nlohmann_json::nlohmann_json)
+ament_target_dependencies(multi_cam_pub_node rclcpp sensor_msgs)
+
+add_executable(stitch_cam_pub_node src/stitch_cam_pub_node.cpp)
+target_include_directories(stitch_cam_pub_node PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(stitch_cam_pub_node
+  opencv_core opencv_imgproc)
+ament_target_dependencies(stitch_cam_pub_node rclcpp sensor_msgs)
+
+install(TARGETS video_bridge_h265 video_bridge_h264 multi_cam_pub_node stitch_cam_pub_node
+  DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS scripts/net_bridge.py DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY scripts/net_bridge DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
