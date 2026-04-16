@@ -37,6 +37,12 @@ target_link_libraries(multi_cam_pub_node
   nlohmann_json::nlohmann_json)
 ament_target_dependencies(multi_cam_pub_node rclcpp sensor_msgs)
 
+add_executable(multi_cam_raw_pub_node src/multi_cam_raw_pub_node.cpp)
+target_include_directories(multi_cam_raw_pub_node PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include ${GST_INCLUDE_DIRS})
+target_link_libraries(multi_cam_raw_pub_node ${GST_LIBRARIES})
+ament_target_dependencies(multi_cam_raw_pub_node rclcpp sensor_msgs)
+
 add_executable(stitch_cam_pub_node src/stitch_cam_pub_node.cpp)
 target_include_directories(stitch_cam_pub_node PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -44,7 +50,7 @@ target_link_libraries(stitch_cam_pub_node
   opencv_core opencv_imgproc)
 ament_target_dependencies(stitch_cam_pub_node rclcpp sensor_msgs)
 
-install(TARGETS video_bridge_h265 video_bridge_h264 multi_cam_pub_node stitch_cam_pub_node
+install(TARGETS video_bridge_h265 video_bridge_h264 multi_cam_pub_node multi_cam_raw_pub_node stitch_cam_pub_node
   DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS scripts/net_bridge.py DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY scripts/net_bridge DESTINATION lib/${PROJECT_NAME})
