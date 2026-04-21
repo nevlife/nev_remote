@@ -1,12 +1,12 @@
 video_bridge_h264:
   ros__parameters:
-    image_topic: "/camera/camera/color/image_raw"
+    image_topic: "/camera/wide/image_raw"
 
     # Target output resolution
-    width: 1280
-    height: 720
+    width: 3840
+    height: 960
     # 1~60, higher = less perceived delay, more bandwidth
-    max_fps: 30.0
+    max_fps: 15.0
 
     # CPU threads for videoconvert (1~16)
     n-threads: 4
@@ -17,14 +17,14 @@ video_bridge_h264:
 
     # Encoding speed preset (GStreamer 1.20, hw_accel only)
     # default | hp | hq | low-latency | low-latency-hq | low-latency-hp | lossless | lossless-hp
-    preset: "low-latency-hp"
+    preset: "low-latency"
 
     # Rate control mode (GStreamer 1.20)
     # default | constqp | cbr | vbr | vbr-minqp
     rc-mode: "cbr"
 
     # Target bitrate in kbit/sec (0=auto), range: 0~2048000
-    bitrate: 1000
+    bitrate: 3000
 
     # Max bitrate in kbit/sec (ignored in CBR mode), range: 0~2048000
     max-bitrate: 0

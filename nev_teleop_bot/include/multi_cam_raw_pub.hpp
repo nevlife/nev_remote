@@ -27,11 +27,9 @@ struct RawCamConfig {
 };
 
 static const std::vector<RawCamConfig> RAW_CAMERAS = {
-    {"/dev/cam_front_left",  "/camera/front_left/image_raw",  "cam_front_left"},
-    {"/dev/cam_side_left",   "/camera/side_left/image_raw",   "cam_side_left"},
-    {"/dev/cam_rear",        "/camera/rear/image_raw",        "cam_rear"},
-    {"/dev/cam_front_right", "/camera/front_right/image_raw", "cam_front_right"},
-    {"/dev/cam_side_right",  "/camera/side_right/image_raw",  "cam_side_right"},
+    {"/dev/cam_front",      "/camera/front/image_raw",      "cam_front"},
+    {"/dev/cam_rear_left",  "/camera/rear_left/image_raw",  "cam_rear_left"},
+    {"/dev/cam_rear_right", "/camera/rear_right/image_raw", "cam_rear_right"},
 };
 
 class MultiCamRawPub : public rclcpp::Node
@@ -79,7 +77,7 @@ private:
             "image/jpeg,width=" + std::to_string(cam_w_) +
             ",height=" + std::to_string(cam_h_) +
             ",framerate=" + std::to_string(cam_fps_) + "/1 ! "
-            "jpegdec ! videoflip method=rotate-180 ! videoconvert ! "
+            "jpegdec ! videoconvert ! "
             "video/x-raw,format=BGR ! "
             "appsink name=sink emit-signals=false drop=true max-buffers=1 sync=false";
 

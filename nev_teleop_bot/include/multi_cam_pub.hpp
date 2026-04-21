@@ -1,14 +1,17 @@
 #pragma once
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
@@ -18,6 +21,9 @@
 #include <opencv2/imgproc.hpp>
 
 #include <nlohmann/json.hpp>
+
+#include <cuda_runtime.h>
+#include <nppi_geometry_transforms.h>
 
 using ImageMsg = sensor_msgs::msg::Image;
 using namespace std::chrono;
@@ -33,12 +39,25 @@ struct CamConfig {
 };
 
 static const std::vector<CamConfig> CAMERAS = {
-    {"/dev/cam_front_left",  "/camera/front_left/image_raw",  "cam_front_left"},
-    {"/dev/cam_side_left",   "/camera/side_left/image_raw",   "cam_side_left"},
-    {"/dev/cam_rear",        "/camera/rear/image_raw",        "cam_rear"},
-    {"/dev/cam_front_right", "/camera/front_right/image_raw", "cam_front_right"},
-    {"/dev/cam_side_right",  "/camera/side_right/image_raw",  "cam_side_right"},
+    {"/dev/cam_front",      "/camera/front/image_raw",      "cam_front"},
+    {"/dev/cam_rear_left",  "/camera/rear_left/image_raw",  "cam_rear_left"},
+    {"/dev/cam_rear_right", "/camera/rear_right/image_raw", "cam_rear_right"},
 };
+
+#define CUDA_CHECK(stmt)                                                       \
+    do {                                                                       \
+        cudaError_t _err = (stmt);                                             \
+        if (_err != cudaSuccess)                                               \
+            throw std::runtime_error(std::string("CUDA: ") +                   \
+                                     cudaGetErrorString(_err));                \
+    } while (0)
+
+#define NPP_CHECK(stmt)                                                        \
+    do {                                                                       \
+        NppStatus _s = (stmt);                                                 \
+        if (_s != NPP_SUCCESS)                                                 \
+            throw std::runtime_error("NPP error: " + std::to_string(_s));      \
+    } while (0)
 
 class MultiCamPub : public rclcpp::Node
 {
@@ -47,19 +66,23 @@ public:
         : Node("multi_cam_pub", options)
     {
         gst_init(nullptr, nullptr);
+        cv::setNumThreads(1);
 
         cam_w_   = declare_parameter<int>("cam_width",  DEFAULT_CAM_WIDTH);
         cam_h_   = declare_parameter<int>("cam_height", DEFAULT_CAM_HEIGHT);
         cam_fps_ = declare_parameter<int>("cam_fps",    DEFAULT_CAM_FPS);
 
-        std::string calib_path = std::string(getenv("HOME")) +
-            "/SCV/src/teleop/nev_teleop_bot/nev_teleop_bot/param/"
-            "ELP-USB16MP01-BL180-2048x1536_calibration.json";
+        std::string default_calib =
+            ament_index_cpp::get_package_share_directory("nev_teleop_bot") +
+            "/param/ELP-USB16MP01-BL180-2048x1536_calibration.json";
+        std::string calib_path =
+            declare_parameter<std::string>("calib_path", default_calib);
 
         RCLCPP_INFO(get_logger(), "Building fisheye undistort maps (capture: %dx%d@%dfps)...",
                      cam_w_, cam_h_, cam_fps_);
         build_undistort_maps(calib_path);
-        RCLCPP_INFO(get_logger(), "Undistort maps ready");
+        setup_gpu_resources();
+        RCLCPP_INFO(get_logger(), "GPU remap ready (NPP CUDA backend)");
 
         auto qos = rclcpp::QoS(10).reliable().durability_volatile();
 
@@ -81,6 +104,7 @@ public:
             gst_object_unref(sinks_[i]);
             gst_object_unref(pipelines_[i]);
         }
+        teardown_gpu_resources();
     }
 
 private:
@@ -94,14 +118,13 @@ private:
         auto cam_key = j.begin().key();
         auto &intr = j[cam_key]["Intrinsic"];
 
-        // Parse calibration resolution from key (e.g. "...-2048x1536")
         int calib_w = 0, calib_h = 0;
         auto xpos = cam_key.rfind('x');
         if (xpos != std::string::npos) {
             size_t wstart = xpos;
-            while (wstart > 0 && std::isdigit(cam_key[wstart - 1])) --wstart;
+            while (wstart > 0 && std::isdigit(static_cast<unsigned char>(cam_key[wstart - 1]))) --wstart;
             size_t hend = xpos + 1;
-            while (hend < cam_key.size() && std::isdigit(cam_key[hend])) ++hend;
+            while (hend < cam_key.size() && std::isdigit(static_cast<unsigned char>(cam_key[hend]))) ++hend;
             calib_w = std::stoi(cam_key.substr(wstart, xpos - wstart));
             calib_h = std::stoi(cam_key.substr(xpos + 1, hend - xpos - 1));
         }
@@ -113,8 +136,7 @@ private:
                      static_cast<double>(cam_w_) / calib_w);
 
         auto k_vec = intr["K"].get<std::vector<double>>();
-        cv::Mat K(3, 3, CV_64F, k_vec.data());
-        K = K.clone();
+        cv::Mat K = cv::Mat(3, 3, CV_64F, k_vec.data()).clone();
 
         auto d_vec = intr["D"].get<std::vector<double>>();
         cv::Mat D(4, 1, CV_64F);
@@ -130,7 +152,56 @@ private:
 
         cv::fisheye::initUndistortRectifyMap(
             K_scaled, D, cv::Mat::eye(3, 3, CV_64F), K_scaled,
-            cv::Size(cam_w_, cam_h_), CV_16SC2, map1_, map2_);
+            cv::Size(cam_w_, cam_h_), CV_32FC1, map_x_host_, map_y_host_);
+    }
+
+    void setup_gpu_resources()
+    {
+        const size_t frame_bytes = static_cast<size_t>(cam_w_) * cam_h_ * 3;
+        const size_t map_bytes   = static_cast<size_t>(cam_w_) * cam_h_ * sizeof(float);
+
+        CUDA_CHECK(cudaMalloc(&d_map_x_, map_bytes));
+        CUDA_CHECK(cudaMalloc(&d_map_y_, map_bytes));
+        CUDA_CHECK(cudaMemcpy(d_map_x_, map_x_host_.ptr<float>(), map_bytes, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_map_y_, map_y_host_.ptr<float>(), map_bytes, cudaMemcpyHostToDevice));
+        map_step_ = cam_w_ * static_cast<int>(sizeof(float));
+
+        d_src_.resize(CAMERAS.size(), nullptr);
+        d_dst_.resize(CAMERAS.size(), nullptr);
+        streams_.resize(CAMERAS.size(), nullptr);
+        npp_ctx_.resize(CAMERAS.size());
+        for (size_t i = 0; i < CAMERAS.size(); i++) {
+            CUDA_CHECK(cudaMalloc(&d_src_[i], frame_bytes));
+            CUDA_CHECK(cudaMalloc(&d_dst_[i], frame_bytes));
+            CUDA_CHECK(cudaStreamCreate(&streams_[i]));
+
+            NppStreamContext ctx = {};
+            int dev = 0;
+            CUDA_CHECK(cudaGetDevice(&dev));
+            cudaDeviceProp prop;
+            CUDA_CHECK(cudaGetDeviceProperties(&prop, dev));
+            ctx.hStream                  = streams_[i];
+            ctx.nCudaDeviceId            = dev;
+            ctx.nMultiProcessorCount     = prop.multiProcessorCount;
+            ctx.nMaxThreadsPerMultiProcessor = prop.maxThreadsPerMultiProcessor;
+            ctx.nMaxThreadsPerBlock      = prop.maxThreadsPerBlock;
+            ctx.nSharedMemPerBlock       = prop.sharedMemPerBlock;
+            ctx.nCudaDevAttrComputeCapabilityMajor = prop.major;
+            ctx.nCudaDevAttrComputeCapabilityMinor = prop.minor;
+            ctx.nStreamFlags             = 0;
+            npp_ctx_[i] = ctx;
+        }
+    }
+
+    void teardown_gpu_resources()
+    {
+        for (size_t i = 0; i < d_src_.size(); i++) {
+            if (d_src_[i]) cudaFree(d_src_[i]);
+            if (d_dst_[i]) cudaFree(d_dst_[i]);
+            if (streams_[i]) cudaStreamDestroy(streams_[i]);
+        }
+        if (d_map_x_) cudaFree(d_map_x_);
+        if (d_map_y_) cudaFree(d_map_y_);
     }
 
     void open_camera(size_t idx)
@@ -140,7 +211,7 @@ private:
             "image/jpeg,width=" + std::to_string(cam_w_) +
             ",height=" + std::to_string(cam_h_) +
             ",framerate=" + std::to_string(cam_fps_) + "/1 ! "
-            "jpegdec ! videoflip method=rotate-180 ! videoconvert ! "
+            "jpegdec ! videoconvert ! "
             "video/x-raw,format=BGR ! "
             "appsink name=sink emit-signals=false drop=true max-buffers=1 sync=false";
 
@@ -182,7 +253,10 @@ private:
     {
         int count = 0;
         auto log_time = steady_clock::now();
-        const size_t frame_bytes = cam_w_ * cam_h_ * 3;
+        const size_t frame_bytes = static_cast<size_t>(cam_w_) * cam_h_ * 3;
+        const int src_step = cam_w_ * 3;
+        const NppiSize full_size = {cam_w_, cam_h_};
+        const NppiRect src_roi   = {0, 0, cam_w_, cam_h_};
 
         while (running_) {
             auto t0 = steady_clock::now();
@@ -196,8 +270,6 @@ private:
                 continue;
             }
 
-            cv::Mat frame(cam_h_, cam_w_, CV_8UC3, map.data);
-
             auto t1 = steady_clock::now();
             auto msg = std::make_unique<ImageMsg>();
             msg->header.stamp = this->now();
@@ -205,11 +277,20 @@ private:
             msg->height = cam_h_;
             msg->width  = cam_w_;
             msg->encoding = "bgr8";
-            msg->step = cam_w_ * 3;
+            msg->step = src_step;
             msg->data.resize(frame_bytes);
 
-            cv::Mat out(cam_h_, cam_w_, CV_8UC3, msg->data.data());
-            cv::remap(frame, out, map1_, map2_, cv::INTER_LINEAR);
+            CUDA_CHECK(cudaMemcpyAsync(d_src_[idx], map.data, frame_bytes,
+                                       cudaMemcpyHostToDevice, streams_[idx]));
+            NPP_CHECK(nppiRemap_8u_C3R_Ctx(
+                static_cast<const Npp8u *>(d_src_[idx]), full_size, src_step, src_roi,
+                static_cast<const Npp32f *>(d_map_x_), map_step_,
+                static_cast<const Npp32f *>(d_map_y_), map_step_,
+                static_cast<Npp8u *>(d_dst_[idx]), src_step, full_size,
+                NPPI_INTER_LINEAR, npp_ctx_[idx]));
+            CUDA_CHECK(cudaMemcpyAsync(msg->data.data(), d_dst_[idx], frame_bytes,
+                                       cudaMemcpyDeviceToHost, streams_[idx]));
+            CUDA_CHECK(cudaStreamSynchronize(streams_[idx]));
             auto t2 = steady_clock::now();
 
             pubs_[idx]->publish(std::move(msg));
@@ -222,7 +303,7 @@ private:
             double elapsed = duration<double>(steady_clock::now() - log_time).count();
             if (elapsed >= 5.0) {
                 RCLCPP_INFO(get_logger(),
-                    "[%s] pull=%.1fms remap=%.1fms pub=%.1fms total=%.1fms fps=%.1f",
+                    "[%s] pull=%.1fms gpu=%.1fms pub=%.1fms total=%.1fms fps=%.1f",
                     CAMERAS[idx].frame_id.c_str(),
                     ms(t0, t1), ms(t1, t2), ms(t2, t3), ms(t0, t3),
                     count / elapsed);
@@ -238,7 +319,17 @@ private:
 
     std::atomic<bool> running_{true};
     int cam_w_, cam_h_, cam_fps_;
-    cv::Mat map1_, map2_;
+
+    cv::Mat map_x_host_, map_y_host_;
+    void *d_map_x_ = nullptr;
+    void *d_map_y_ = nullptr;
+    int   map_step_ = 0;
+
+    std::vector<void *> d_src_;
+    std::vector<void *> d_dst_;
+    std::vector<cudaStream_t> streams_;
+    std::vector<NppStreamContext> npp_ctx_;
+
     std::vector<rclcpp::Publisher<ImageMsg>::SharedPtr> pubs_;
     std::vector<GstElement *> pipelines_;
     std::vector<GstElement *> sinks_;

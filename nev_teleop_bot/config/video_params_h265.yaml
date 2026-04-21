@@ -1,10 +1,10 @@
 video_bridge_h265:
   ros__parameters:
-    image_topic: "/camera/camera/color/image_raw"
+    image_topic: "/camera/wide/image_raw"
 
     # Target output resolution
-    width: 6400
-    height: 720
+    width: 4800
+    height: 1200
     # 1~60, higher = less perceived delay, more bandwidth
     max_fps: 30.0
 
@@ -13,7 +13,7 @@ video_bridge_h265:
 
     # Hardware acceleration (NVIDIA NVENC)
     # true: nvh265enc (GPU), false: x265enc (CPU, SW)
-    hw_accel: false
+    hw_accel: true
 
     # Encoding speed preset (GStreamer 1.20, hw_accel only)
     # default | hp | hq | low-latency | low-latency-hq | low-latency-hp | lossless | lossless-hp
@@ -24,7 +24,7 @@ video_bridge_h265:
     rc-mode: "cbr"
 
     # Target bitrate in kbit/sec (0=auto), range: 0~2048000
-    bitrate: 1000
+    bitrate: 500
 
     # Max bitrate in kbit/sec (ignored in CBR mode), range: 0~2048000
     max-bitrate: 0
