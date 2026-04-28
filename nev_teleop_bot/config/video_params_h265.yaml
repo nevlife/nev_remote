@@ -3,13 +3,13 @@ video_bridge_h265:
     image_topic: "/camera/wide/image_raw"
 
     # Target output resolution
-    width: 4800
-    height: 1200
+    width: 6144 #4800
+    height: 1536 #1200
     # 1~60, higher = less perceived delay, more bandwidth
-    max_fps: 30.0
+    max_fps: 15.0
 
     # CPU threads for videoconvert (1~16)
-    n-threads: 4
+    n-threads: 8
 
     # Hardware acceleration (NVIDIA NVENC)
     # true: nvh265enc (GPU), false: x265enc (CPU, SW)
@@ -17,20 +17,20 @@ video_bridge_h265:
 
     # Encoding speed preset (GStreamer 1.20, hw_accel only)
     # default | hp | hq | low-latency | low-latency-hq | low-latency-hp | lossless | lossless-hp
-    preset: "low-latency"  # "low-latency-hp" may not be supported depending on GStreamer version
+    preset: "low-latency-hp"  # "low-latency-hp" may not be supported depending on GStreamer version
 
     # Rate control mode (GStreamer 1.20)
     # default | constqp | cbr | vbr | vbr-minqp
     rc-mode: "cbr"
 
     # Target bitrate in kbit/sec (0=auto), range: 0~2048000
-    bitrate: 500
+    bitrate: 200000
 
     # Max bitrate in kbit/sec (ignored in CBR mode), range: 0~2048000
     max-bitrate: 0
 
     # Frames between I-frames (-1=infinite), range: -1~2147483647, default: 75
-    gop-size: 60
+    gop-size: 30
 
     # Access Unit delimiter, not needed for network streaming
     aud: false

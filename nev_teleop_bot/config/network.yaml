@@ -4,7 +4,7 @@
 
 net_bridge:
   ros__parameters:
-    telemetry_locator: tcp/127.0.0.1:7447
+    telemetry_locator: "tcp/127.0.0.1:7447"
 
 video_bridge_h264:
   ros__parameters:

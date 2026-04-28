@@ -28,9 +28,9 @@
 using ImageMsg = sensor_msgs::msg::Image;
 using namespace std::chrono;
 
-static constexpr int DEFAULT_CAM_WIDTH  = 1600;
-static constexpr int DEFAULT_CAM_HEIGHT = 1200;
-static constexpr int DEFAULT_CAM_FPS    = 15;
+static constexpr int DEFAULT_CAM_WIDTH  = 2048;
+static constexpr int DEFAULT_CAM_HEIGHT = 1536;
+static constexpr int DEFAULT_CAM_FPS    = 10;
 
 struct CamConfig {
     std::string device;

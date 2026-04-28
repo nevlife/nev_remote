@@ -18,7 +18,7 @@ using namespace std::chrono;
 
 static constexpr int DEFAULT_RAW_CAM_WIDTH  = 1600;
 static constexpr int DEFAULT_RAW_CAM_HEIGHT = 1200;
-static constexpr int DEFAULT_RAW_CAM_FPS    = 15;
+static constexpr int DEFAULT_RAW_CAM_FPS    = 30;
 
 struct RawCamConfig {
     std::string device;
