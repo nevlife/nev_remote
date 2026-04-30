@@ -8,7 +8,7 @@ import rclpy  # noqa: E402
 from rclpy.node import Node  # noqa: E402
 from rclpy.executors import MultiThreadedExecutor  # noqa: E402
 from geometry_msgs.msg import Twist  # noqa: E402
-from std_msgs.msg import Float64  # noqa: E402
+from std_msgs.msg import Float64, String  # noqa: E402
 from nev_teleop_bot_msgs.msg import EStopStatus, CmdMode, MuxStatus  # noqa: E402
 from system_monitor_msgs.msg import (  # noqa: E402
     CpuMetrics,
@@ -90,6 +90,12 @@ class NetBridge(Node):
         self.transport.declare_subscriber(
             f"nev/gcs/{vid}/cmd_mode", self.inbound.on_cmd_mode
         )
+        # Forward video control signaling (PLI / bitrate / keyframe_req) from
+        # GCS to the local video_bridge over ROS2 /video/ctl.
+        self._video_ctl_pub = self.create_publisher(String, "/video/ctl", 10)
+        self.transport.declare_subscriber(
+            f"nev/gcs/{vid}/video_ctl", self._on_video_ctl
+        )
 
         self.mux_status = MuxStatus()
         self.estop_status = EStopStatus()
@@ -166,6 +172,14 @@ class NetBridge(Node):
             f'-> {locator or "auto-discovery"}'
         )
         logger.info(f"speed_topic={speed_topic}, angle_topic={angle_topic}")
+
+    def _on_video_ctl(self, sample):
+        # Forward raw JSON payload to /video/ctl. Parsing happens in the C++
+        # video_bridge so we keep this hot path allocation-free.
+        try:
+            self._video_ctl_pub.publish(String(data=bytes(sample.payload).decode("utf-8")))
+        except Exception as e:
+            self.get_logger().warning(f"video_ctl forward error: {e}")
 
     def _process_commands(self):
         cmds = self.inbound.drain_pending()

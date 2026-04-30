@@ -9,9 +9,11 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <gst/gst.h>
 #include <gst/app/gstappsrc.h>
 #include <gst/app/gstappsink.h>
+#include <gst/video/video-event.h>
 #include "zenoh.h"
 
 using namespace std::chrono;
@@ -47,8 +49,10 @@ public:
     declare_parameter("rc-lookahead", 0);
     declare_parameter("b-frames", 0);
     declare_parameter("config-interval", -1);
+    declare_parameter("rtp_mode", false);
 
     image_topic_ = get_parameter("image_topic").as_string();
+    rtp_mode_ = get_parameter("rtp_mode").as_bool();
     zenoh_locator_ = get_parameter("video_locator").as_string();
     vehicle_id_ = get_parameter("vehicle_id").as_string();
     target_w_ = get_parameter("width").as_int();
@@ -64,6 +68,10 @@ public:
       image_topic_, qos,
       [this](const ImageMsg::SharedPtr msg) {on_image(msg);});
 
+    ctl_sub_ = create_subscription<std_msgs::msg::String>(
+      "/video/ctl", rclcpp::QoS(10).reliable(),
+      [this](const std_msgs::msg::String::SharedPtr msg) {on_video_ctl(msg->data);});
+
     RCLCPP_INFO(get_logger(), "%s ready — topic: %s", node_name.c_str(), image_topic_.c_str());
   }
 
@@ -75,7 +83,74 @@ public:
     z_drop(z_move(zsession_));
   }
 
+  // Send a downstream force-key-unit event to the encoder. Called by upstream
+  // signaling (e.g. PLI-equivalent) to recover decoder after packet loss.
+  void force_keyframe()
+  {
+    if (!encoder_) {return;}
+    GstEvent * ev = gst_video_event_new_downstream_force_key_unit(
+      GST_CLOCK_TIME_NONE, GST_CLOCK_TIME_NONE, GST_CLOCK_TIME_NONE,
+      TRUE, key_unit_count_++);
+    gst_element_send_event(encoder_, ev);
+  }
+
 private:
+  // Minimal JSON field reader for {"type":"...","kbps":N} style payloads.
+  // Returns true if `key` is found; on success writes the matched substring
+  // (string value or unquoted number) into `out`.
+  static bool json_field(const std::string & s, const std::string & key, std::string & out)
+  {
+    std::string needle = "\"" + key + "\"";
+    auto k = s.find(needle);
+    if (k == std::string::npos) {return false;}
+    auto colon = s.find(':', k + needle.size());
+    if (colon == std::string::npos) {return false;}
+    auto i = colon + 1;
+    while (i < s.size() && (s[i] == ' ' || s[i] == '\t')) {i++;}
+    if (i >= s.size()) {return false;}
+    if (s[i] == '"') {
+      auto end = s.find('"', i + 1);
+      if (end == std::string::npos) {return false;}
+      out = s.substr(i + 1, end - i - 1);
+    } else {
+      auto end = i;
+      while (end < s.size() && s[end] != ',' && s[end] != '}' &&
+        s[end] != ' ' && s[end] != '\t' && s[end] != '\n') {end++;}
+      out = s.substr(i, end - i);
+    }
+    return true;
+  }
+
+  void on_video_ctl(const std::string & json)
+  {
+    std::string type;
+    if (!json_field(json, "type", type)) {
+      RCLCPP_WARN(get_logger(), "video_ctl: missing 'type' in '%s'", json.c_str());
+      return;
+    }
+    if (type == "pli" || type == "keyframe_req") {
+      double now = mono_sec();
+      if (last_keyframe_mono_ > 0 && (now - last_keyframe_mono_) < 0.200) {
+        return;  // debounce: ignore PLI within 200 ms of previous one
+      }
+      last_keyframe_mono_ = now;
+      force_keyframe();
+      RCLCPP_INFO(get_logger(), "video_ctl: force_keyframe (%s)", type.c_str());
+    } else if (type == "bitrate") {
+      std::string kbps_str;
+      if (!encoder_ || !json_field(json, "kbps", kbps_str)) {return;}
+      try {
+        guint kbps = static_cast<guint>(std::stoul(kbps_str));
+        g_object_set(encoder_, "bitrate", kbps, NULL);
+        RCLCPP_INFO(get_logger(), "video_ctl: bitrate=%u kbps", kbps);
+      } catch (const std::exception & e) {
+        RCLCPP_WARN(get_logger(), "video_ctl: bad kbps '%s': %s", kbps_str.c_str(), e.what());
+      }
+    } else {
+      RCLCPP_DEBUG(get_logger(), "video_ctl: unknown type '%s'", type.c_str());
+    }
+  }
+
   void init_zenoh()
   {
     z_owned_config_t zconf;
@@ -186,14 +261,37 @@ private:
     }
 
     char ps[2048];
-    if (hw_accel) {
+    if (hw_accel && rtp_mode_ && codec_ == "h265") {
+      // RTP wire format on top of Zenoh TCP. Marker bit = AU end. mtu=1200 to fit MTU.
+      snprintf(
+        ps, sizeof(ps),
+        "appsrc name=appsrc format=time is-live=true do-timestamp=true "
+        "caps=\"video/x-raw,format=%s,width=%d,height=%d,framerate=%d/1\" ! "
+        "videoconvert n-threads=%d ! videoscale ! "
+        "video/x-raw,format=NV12,width=%ld,height=%ld ! "
+        "%s name=enc preset=%s rc-mode=%s bitrate=%ld max-bitrate=%ld "
+        "gop-size=%ld aud=%s qos=%s zerolatency=%s "
+        "rc-lookahead=%ld bframes=%ld ! "
+        "h265parse config-interval=1 ! "
+        "video/x-h265,stream-format=byte-stream,alignment=au ! "
+        "rtph265pay pt=96 config-interval=1 aggregate-mode=zero-latency mtu=1200 ! "
+        "application/x-rtp,media=video,encoding-name=H265,clock-rate=90000,payload=96 ! "
+        "appsink name=appsink emit-signals=true sync=false drop=false max-buffers=8",
+        gst_fmt_.c_str(), w, h, (int)max_fps_,
+        n_threads, target_w_, target_h_,
+        encoder_element_.c_str(),
+        s("preset").c_str(), s("rc-mode").c_str(),
+        i("bitrate"), i("max-bitrate"),
+        i("gop-size"), b("aud"), b("gst_qos"), b("zerolatency"),
+        i("rc-lookahead"), i("b-frames"));
+    } else if (hw_accel) {
       snprintf(
         ps, sizeof(ps),
         "appsrc name=appsrc format=time is-live=true do-timestamp=true "
         "caps=\"video/x-raw,format=%s,width=%d,height=%d,framerate=%d/1\" ! "
         "videoconvert n-threads=%d ! videoscale ! "          // videoconvert: 색상만, videoscale: 해상도
         "video/x-raw,format=NV12,width=%ld,height=%ld ! "
-        "%s preset=%s rc-mode=%s bitrate=%ld max-bitrate=%ld "
+        "%s name=enc preset=%s rc-mode=%s bitrate=%ld max-bitrate=%ld "
         "gop-size=%ld aud=%s qos=%s zerolatency=%s "
         "rc-lookahead=%ld bframes=%ld ! "
         "%s config-interval=%ld ! "
@@ -260,6 +358,7 @@ private:
     g_object_set(
       appsrc_, "max-bytes", (guint64)(w * h * 3 * 2), "block", FALSE, "leaky-type", 2,
       nullptr);
+    encoder_ = gst_bin_get_by_name(GST_BIN(pipeline_), "enc");
 
     auto * sink = gst_bin_get_by_name(GST_BIN(pipeline_), "appsink");
     GstAppSinkCallbacks cbs = {};
@@ -294,11 +393,25 @@ private:
     if (!sample) {return GST_FLOW_OK;}
     enc_out_count_++;
 
-    double enc_ms = 0;
-    double pt = push_time_.load();
-    if (pt > 0) {enc_ms = (mono_sec() - pt) * 1000.0;}
-
     GstBuffer * buf = gst_sample_get_buffer(sample);
+    // In RTP mode, enc_ms is only meaningful on the first packet of an AU.
+    // We replicate the previous AU's enc_ms for non-first packets so the wire header stays fixed-size.
+    double enc_ms = 0;
+    if (rtp_mode_) {
+      bool marker = GST_BUFFER_FLAG_IS_SET(buf, GST_BUFFER_FLAG_MARKER);
+      if (au_first_) {
+        double pt = push_time_.load();
+        enc_ms = (pt > 0) ? (mono_sec() - pt) * 1000.0 : 0;
+        last_au_enc_ms_ = enc_ms;
+      } else {
+        enc_ms = last_au_enc_ms_;
+      }
+      au_first_ = marker;  // next packet after marker starts a new AU
+    } else {
+      double pt = push_time_.load();
+      if (pt > 0) {enc_ms = (mono_sec() - pt) * 1000.0;}
+    }
+
     GstMapInfo map;
     if (gst_buffer_map(buf, &map, GST_MAP_READ)) {
       double ts = now_sec();
@@ -377,7 +490,11 @@ private:
   double last_push_ = 0, log_time_ = 0;
   int cb_count_ = 0, drop_count_ = 0, enc_out_count_ = 0;
   std::atomic<double> push_time_{0};
-  GstElement * pipeline_ = nullptr, * appsrc_ = nullptr;
+  GstElement * pipeline_ = nullptr, * appsrc_ = nullptr, * encoder_ = nullptr;
+  bool rtp_mode_ = false;
+  bool au_first_ = true;
+  double last_au_enc_ms_ = 0;
+  size_t key_unit_count_ = 0;
   z_owned_session_t zsession_;
   z_owned_publisher_t zpub_cam_, zpub_stats_;
   std::vector<uint8_t> pkt_buf_;
@@ -385,4 +502,6 @@ private:
   double enc_sum_ = 0, enc_max_ms_ = 0, put_max_ms_ = 0, input_max_ms_ = 0, stats_ts_ = 0;
   int enc_count_ = 0;
   rclcpp::Subscription<ImageMsg>::SharedPtr sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr ctl_sub_;
+  double last_keyframe_mono_ = 0.0;
 };

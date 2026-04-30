@@ -14,6 +14,7 @@
   <depend>rclcpp_components</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>message_filters</depend>
   <depend>nev_teleop_bot_msgs</depend>
   <depend>hunter_msgs</depend>

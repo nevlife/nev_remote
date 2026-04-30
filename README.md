@@ -41,9 +41,10 @@ ros2 launch nev_teleop_bot video_bridge_h264.launch.py   # 또는 video_bridge_h
 | 파라미터 | 기본값 | 설명 |
 |----------|--------|------|
 | `hw_accel` | `true` | NVIDIA NVENC (GPU) / x264/x265 (CPU) |
-| `bitrate` | `1000` | 목표 비트레이트 (kbit/s) |
+| `bitrate` | `1000` | 목표 비트레이트 (kbit/s). `/video/ctl` 의 `bitrate` 메시지로 런타임 변경 가능 |
 | `gop-size` | `60` | I-프레임 간격 |
 | `max_fps` | `30.0` | 최대 프레임레이트 |
+| `rtp_mode` | `false` | 옵트인. true 시 인코더 출력에 `rtph265pay` 추가, Zenoh sample 단위가 RTP 패킷으로 변경 (와이어 포맷만 RTP, 전송은 Zenoh TCP). H.265 전용 |
 
 ## Zenoh 토픽
 
@@ -59,7 +60,7 @@ ros2 launch nev_teleop_bot video_bridge_h264.launch.py   # 또는 video_bridge_h
 | `gpu` | 1Hz | GPU 배열 (usage, mem, temp, power) |
 | `disk` | 1Hz | 파티션 배열 (mountpoint, total, used, percent) |
 | `net` | 1Hz | 인터페이스 배열 (name, is_up, speed, in/out bps) |
-| `camera` | 10-30fps | Binary: vehicle_ts(8B) + encode_ms(4B) + NAL |
+| `camera` | 10-30fps | Binary: vehicle_ts(8B) + encode_ms(4B) + payload. payload 은 `rtp_mode=false` 시 NAL AU, `rtp_mode=true` 시 RTP 패킷 1개 (AU 1개 = N 패킷, 같은 enc_ms 복제) |
 | `video_stats` | 1Hz | codec, bw_mbps, fps, drop, enc_avg_ms 등 |
 | `vehicle/{name}` | vehicle_rate 또는 resource_rate | YAML 설정 동적 토픽 (아래 참고) |
 | `server_pong` | 즉시 | server_ping 에코 `{ts}` |
@@ -74,6 +75,7 @@ ros2 launch nev_teleop_bot video_bridge_h264.launch.py   # 또는 video_bridge_h
 | `teleop` | `{linear_x, steer_angle}` → 봇에서 Ackermann 변환 |
 | `estop` | `{active}` (RELIABLE) |
 | `cmd_mode` | `{mode}` (RELIABLE) |
+| `video_ctl` | JSON `{"type":"pli"\|"keyframe_req"\|"bitrate","kbps":<u32>}` (RELIABLE, INTERACTIVE_HIGH). `pli`/`keyframe_req` → 인코더 force-IDR (200 ms 디바운스), `bitrate` → NVENC 런타임 bitrate 변경 |
 
 ## 차량별 가변 토픽 추가
 
@@ -131,4 +133,9 @@ teleop_topics:
 
 - ROS 2 Humble
 - [zenoh-c](https://github.com/eclipse-zenoh/zenoh-c) 1.8.0
-- GStreamer 1.20 (`x264enc`, `x265enc`, `nvh264enc`, `nvh265enc`)
+- GStreamer 1.20 — pkg-config: `gstreamer-1.0`, `gstreamer-app-1.0`, `gstreamer-video-1.0` (`gst_video_event_new_downstream_force_key_unit` 사용). 인코더: `x264enc`, `x265enc`, `nvh264enc`, `nvh265enc`. RTP 모드 활성화 시 `rtph265pay` 추가 필요 (`gst-plugins-good`).
+
+## 호환성 주의 (Humble / GStreamer 1.20)
+
+- `rtph265pay aggregate-mode=zero-latency` 옵션이 1.20 에 없을 수 있음. `gst-inspect-1.0 rtph265pay | grep -A8 aggregate-mode` 로 확인. 미지원 시 해당 프로퍼티 제거.
+- `nvh265enc` 의 `bitrate` 런타임 변경은 1.22+ 에서 안정. 1.20 NVENC 는 `g_object_set` 이 무시되거나 다음 IDR 까지 반영 안 될 수 있음. `gst-inspect-1.0 nvh265enc | grep -B1 -A3 bitrate` 의 `CONTROLLABLE` 플래그 확인. PR 5 (bitrate 적응) 에서 보수적 핸들링 필요.
